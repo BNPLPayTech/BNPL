@@ -92,7 +92,6 @@ def test_banking_node_regular_loan():
     tx.wait(1)
     assert node.unbondingAmount() == BOND_AMOUNT / 2
     assert node.getBNPLBalance(account) == BOND_AMOUNT / 2
-    assert node.isNodeActive() == False
 
     # Check that liquidity can no longer be deposited as node is now inactive
     approve_erc20(
@@ -124,7 +123,6 @@ def test_banking_node_regular_loan():
     approve_erc20(BOND_AMOUNT / 2, node_address, bnpl, account)
     node.stake(BOND_AMOUNT / 2, {"from": account})
     assert node.getBNPLBalance(account) == BOND_AMOUNT
-    assert node.isNodeActive()
     assert node.unbondingAmount() == BOND_AMOUNT / 2
 
     # Request a loan of 100 USDT, monthly payments, 1 year duration, 10% interest, principal + interest
@@ -135,8 +133,7 @@ def test_banking_node_regular_loan():
         12,
         1000,
         False,
-        account,
-        '0x0000000000000000000000000000000000000000',
+        "0x0000000000000000000000000000000000000000",
         0,
         "tester loan",
         {"from": account2},
@@ -145,15 +142,15 @@ def test_banking_node_regular_loan():
     assert node.getPendingRequestCount() == 1
 
     # Check return values of loan getter functions
-    loan_id = node.getPendingLoanRequests()[0]
+    loan_id = node.pendingRequests(0)
     assert node.getLoanMessage(loan_id) == "tester loan"
     assert node.getNextDueDate(loan_id) == 0
     assert node.getNextPayment(loan_id) == 0
 
     # Approve the loan to check return parameters
     with pytest.raises(Exception):  # First check operator only
-        tx = node.approveLoan(loan_id, {"from": account2})
-    tx = node.approveLoan(loan_id, {"from": account})
+        tx = node.approveLoan(loan_id, 0, {"from": account2})
+    tx = node.approveLoan(loan_id, 0, {"from": account})
     tx.wait(1)
 
     assert node.getPendingRequestCount() == 0
@@ -199,7 +196,7 @@ def test_banking_node_regular_loan():
         tx = node.slashLoan(loan_id)
 
     # Check on new loan details
-    expected_interest_paid = USDT_AMOUNT * 0.1 / 12 * 0.65
+    expected_interest_paid = USDT_AMOUNT * 0.1 / 12 * 0.7
     expected_principal_portion = expected_payment - expected_interest_paid
     assert (
         node.getTotalAssetValue() >= USDT_AMOUNT * 1.99 + expected_interest_paid
@@ -215,10 +212,9 @@ def test_banking_node_regular_loan():
         and node.getNextDueDate(loan_id) < time.time() + payment_interval * 2
     )
 
-    # Check there is baseToken for the operator, stakers, and agents
+    # Check there is baseToken for the operator, stakers
     operator_rewards = USDT_AMOUNT * 0.1 / 12 * 0.1
     staking_rewards = USDT_AMOUNT * 0.1 / 12 * 0.2
-    agent_fees = USDT_AMOUNT * 0.1 / 12 * 0.05
     assert (
         node.getPendingOperatorRewards() >= operator_rewards * 0.99
         and node.getPendingOperatorRewards() <= operator_rewards * 1.01
@@ -226,9 +222,6 @@ def test_banking_node_regular_loan():
     assert (
         node.getPendingStakerRewards() >= staking_rewards * 0.99
         and node.getPendingStakerRewards() <= staking_rewards * 1.01
-    )
-    assert (
-        node.agentFees() >= agent_fees * 0.99 and node.agentFees() <= agent_fees * 1.01
     )
 
     # Make the remaining 11 payments
@@ -242,10 +235,9 @@ def test_banking_node_regular_loan():
 
     # Check on details
     total_interest_paid = 5.50 * 10**6  # 5.50 USDT
-    expected_end_balance = USDT_AMOUNT * 2 + total_interest_paid * 0.65
+    expected_end_balance = USDT_AMOUNT * 2 + total_interest_paid * 0.7
     operator_rewards = total_interest_paid * 0.1
     staking_rewards = total_interest_paid * 0.2
-    agent_fees = total_interest_paid * 0.05
     assert (
         node.getTotalAssetValue() >= expected_end_balance * 0.99
         and node.getTotalAssetValue() <= expected_end_balance * 1.01
@@ -259,18 +251,6 @@ def test_banking_node_regular_loan():
         node.getPendingStakerRewards() >= staking_rewards * 0.99
         and node.getPendingStakerRewards() <= staking_rewards * 1.01
     )
-    assert (
-        node.agentFees() >= agent_fees * 0.99 and node.agentFees() <= agent_fees * 1.01
-    )
-
-    # Test collect agent fees
-    with pytest.raises(Exception):
-        node.collectAgentFees({"from": account2})
-    node.collectAgentFees({"from": account})
-    assert node.agentFees() == 0
-    assert node.getAgentFee(account) == 0
-    with pytest.raises(Exception):
-        node.collectAgentFees({"from": account})
 
     # Deploy liquidity on Uniswap for BNPL/ETH
     add_lp(bnpl)

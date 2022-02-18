@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./interfaces/ILendingPool.sol";
 import "./interfaces/ILendingPoolAddressesProvider.sol";
 import "./interfaces/IUniswapV2Router02.sol";
+import "./interfaces/IAaveIncentivesController.sol";
 
 contract BankingNode is ERC20("BNPL USD", "bUSD") {
     address public operator;
@@ -14,12 +15,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     uint256 public gracePeriod;
     bool requireKYC;
 
-    //For agent fees
-    uint256 public agentFeePercent; //% * 10,000 of interest given to agent , maximum as 5% (500)
-    mapping(address => uint256) agentFeePending;
-    uint256 public agentFees;
     address public treasury;
 
+    IAaveIncentivesController public aaveRewardController;
     ILendingPoolAddressesProvider public lendingPoolProvider;
     IUniswapV2Router02 public router;
     address public immutable factory;
@@ -46,12 +44,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     uint256 public slashingBalance;
     IERC20 public BNPL;
 
-    uint256 public totalBaseTokenDonations;
-    uint256 public totalBNPLDonations;
-
     struct Loan {
         address borrower;
-        address agent;
         bool interestOnly; //interest only or principal + interest
         uint256 loanStartTime; //unix timestamp of start
         uint256 loanAmount;
@@ -64,6 +58,20 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 collateralAmount;
     }
 
+    //EVENTS
+    event LoanRequest(
+        uint256 loanId,
+        address borrower,
+        uint256 loanAmount,
+        uint256 interestRate,
+        uint256 numberOfPayments,
+        uint256 paymentInterval,
+        address collateral,
+        uint256 collateralAmount,
+        bool interestOnly,
+        string message
+    );
+
     constructor() {
         factory = msg.sender;
     }
@@ -74,30 +82,30 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Called once by the factory at time of deployment
      */
     function initialize(
-        ERC20 _baseToken,
+        address _baseToken,
         IERC20 _BNPL,
         bool _requireKYC,
         address _operator,
         uint256 _gracePeriod,
         address _lendingPoolProvider,
         address _sushiRouter,
-        uint256 _agentFeePercent
+        address _aaveDistributionController
     ) external {
         //only to be done by factory
         require(
             msg.sender == factory,
             "Set up can only be done through BNPL Factory"
         );
-        //max agentFee is 5%
-        require(_agentFeePercent <= 500);
-        baseToken = _baseToken;
+        baseToken = ERC20(_baseToken);
         BNPL = _BNPL;
         requireKYC = _requireKYC;
         operator = _operator;
         gracePeriod = _gracePeriod;
-        agentFeePercent = _agentFeePercent;
         lendingPoolProvider = ILendingPoolAddressesProvider(
             _lendingPoolProvider
+        );
+        aaveRewardController = IAaveIncentivesController(
+            _aaveDistributionController
         );
         router = IUniswapV2Router02(_sushiRouter);
         //decimal check on baseToken and aToken to make sure math logic on future steps
@@ -120,7 +128,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 numberOfPayments,
         uint256 interestRate,
         bool interestOnly,
-        address agent, //set to operator if no agent
         address collateral,
         uint256 collateralAmount,
         string memory message
@@ -135,7 +142,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         pendingRequests.push(requestId);
         idToLoan[requestId] = Loan(
             msg.sender,
-            agent,
             interestOnly,
             0,
             loanAmount,
@@ -147,7 +153,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             collateral,
             collateralAmount
         );
-        //emit the message
 
         //post the collateral if any
         if (collateralAmount > 0) {
@@ -168,6 +173,18 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
                 0
             );
         }
+        emit LoanRequest(
+            requestId,
+            msg.sender,
+            loanAmount,
+            interestRate,
+            numberOfPayments,
+            paymentInterval,
+            collateral,
+            collateralAmount,
+            interestOnly,
+            message
+        );
     }
 
     /**
@@ -190,6 +207,39 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         collateralOwed[idToLoan[loanId].collateral] -= idToLoan[loanId]
             .collateralAmount;
         idToLoan[loanId].collateralAmount = 0;
+    }
+
+    /**
+     * Collect AAVE rewards and distribute to lenders
+     */
+    function collectAaveRewards(address[] calldata assets) external {
+        uint256 rewardAmount = aaveRewardController.getRewardsBalance(
+            assets,
+            address(this)
+        );
+        require(rewardAmount > 0);
+        uint256 rewards = aaveRewardController.claimRewards(
+            assets,
+            rewardAmount,
+            address(this)
+        );
+        //swap the tokens for BNPL
+        uint256 deadline = block.timestamp;
+        //as BNPL-ETH is the most liquid pair, always set path to collateral > ETH > BNPL
+        address[] memory path = new address[](3);
+        path[0] = aaveRewardController.REWARD_TOKEN();
+        path[1] = router.WETH();
+        path[2] = address(BNPL);
+        //swap for BNPL (0 slippage as small amounts)
+        IERC20 aave = IERC20(aaveRewardController.REWARD_TOKEN());
+        aave.approve(address(router), rewards);
+        router.swapExactTokensForTokens(
+            rewards,
+            0,
+            path,
+            address(this),
+            deadline
+        );
     }
 
     /**
@@ -216,6 +266,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         path[1] = router.WETH();
         path[2] = address(BNPL);
         //swap for BNPL (0 slippage as small amounts)
+        IERC20 collateralToken = IERC20(collateral);
+        collateralToken.approve(address(router), feesAccrued);
         router.swapExactTokensForTokens(
             feesAccrued,
             0,
@@ -260,12 +312,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         ILendingPool lendingPool = ILendingPool(
             lendingPoolProvider.getLendingPool()
         );
-        //deposit the tokens into AAVE on behalf of the pool contract, withholding 30% and agent fees of the interest as baseToken
-        uint256 agentFeeAccrued = (interestPortion * agentFeePercent) / 10000;
-        agentFees += agentFeeAccrued;
-        agentFeePending[idToLoan[loanId].agent] += agentFeeAccrued;
-        uint256 interestWithheld = ((interestPortion * 3) / 10) +
-            agentFeeAccrued;
+        //deposit the tokens into AAVE on behalf of the pool contract, withholding 30% and the interest as baseToken
+        uint256 interestWithheld = ((interestPortion * 3) / 10);
         baseToken.approve(
             address(lendingPool),
             paymentAmount - interestWithheld
@@ -312,12 +360,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //make payment
         baseToken.transferFrom(msg.sender, address(this), paymentAmount);
 
-        //agent, operator and staking fees
-        uint256 agentFeeAccrued = (interestAmount * agentFeePercent) / 10000;
-        agentFees += agentFeeAccrued;
-        agentFeePending[idToLoan[loanId].agent] += agentFeeAccrued;
-        uint256 interestWithheld = ((interestAmount * 3) / 10) +
-            agentFeeAccrued;
+        uint256 interestWithheld = ((interestAmount * 3) / 10);
 
         //get the latest lending pool address
         ILendingPool lendingPool = ILendingPool(
@@ -353,7 +396,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function collectFees() external {
         //check there are tokens to swap
-        require(baseToken.balanceOf(address(this)) - agentFees > 0);
+        require(baseToken.balanceOf(address(this)) > 0);
         uint256 deadline = block.timestamp;
         address[] memory path = new address[](3);
         //As BNPL-ETH Pair is most liquid, goes baseToken > WETH > BNPL
@@ -361,10 +404,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         path[1] = router.WETH();
         path[2] = address(BNPL);
         //33% to go to operator as baseToken
-        uint256 operatorFees = (baseToken.balanceOf(address(this)) -
-            agentFees) / 3;
-        uint256 stakingRewards = ((baseToken.balanceOf(address(this)) -
-            agentFees) * 2) / 3;
+        uint256 operatorFees = (baseToken.balanceOf(address(this))) / 3;
+        uint256 stakingRewards = ((baseToken.balanceOf(address(this))) * 2) / 3;
         baseToken.transfer(operator, operatorFees);
         //remainder (66%) to go to stakers
         baseToken.approve(address(router), stakingRewards);
@@ -589,18 +630,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Collect fees as an agent
-     */
-    function collectAgentFees() external {
-        //require there are fees to collect
-        require(agentFeePending[msg.sender] > 0);
-        baseToken.transfer(msg.sender, agentFeePending[msg.sender]);
-        //update balances
-        agentFees -= agentFeePending[msg.sender];
-        agentFeePending[msg.sender] = 0;
-    }
-
-    /**
      * Donate baseToken for when debt is collected post default
      */
 
@@ -821,38 +850,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Get the loanIds of pending requests
+     * Get the current number of active loans
      */
-    function getPendingLoanRequests() public view returns (uint256[] memory) {
-        return pendingRequests;
-    }
-
     function getCurrentLoansCount() public view returns (uint256) {
         return currentLoans.length;
-    }
-
-    function getCurrentLoans() public view returns (uint256[] memory) {
-        return currentLoans;
-    }
-
-    /**
-     * Get the node operators pending rewards
-     */
-    function getPendingOperatorRewards() external view returns (uint256) {
-        return (baseToken.balanceOf(address(this)) - agentFees) / 3;
-    }
-
-    /**
-     * Get the pending staker rewards
-     */
-    function getPendingStakerRewards() external view returns (uint256) {
-        return ((baseToken.balanceOf(address(this)) - agentFees) * 2) / 3;
-    }
-
-    /**
-     * Get the amount of fees for a given agent
-     */
-    function getAgentFee(address agent) public view returns (uint256) {
-        return agentFeePending[agent];
     }
 }

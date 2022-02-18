@@ -16,7 +16,6 @@ BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6
 LP_AMOUNT = 10 * 10**7
 LP_ETH = 10**17
-AGENT_FEE = 500
 
 
 def deploy_bnpl_token():
@@ -32,6 +31,7 @@ def deploy_bnpl_factory(bnpl, router):
         bnpl,
         config["networks"][network.show_active()]["lendingPoolAddressesProvider"],
         router,
+        config["networks"][network.show_active()]["aaveDistributionController"],
         {"from": account},
     )
     return bnpl_factory
@@ -51,7 +51,6 @@ def create_node(bnpl_factory):
         config["networks"][network.show_active()]["usdt"],
         False,
         GRACE_PERIOD,
-        AGENT_FEE,
         {"from": account},
     )
     tx.wait(1)

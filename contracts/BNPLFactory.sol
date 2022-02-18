@@ -4,28 +4,28 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "./interfaces/IUniswapV2Router02.sol";
 import "./BankingNode.sol";
 
 contract BNPLFactory is Ownable {
-    mapping(address => address) activeNodes;
+    mapping(address => address) operatorToNode;
     address[] public bankingNodesList;
     IERC20 public immutable BNPL;
     address public immutable lendingPoolAddressesProvider;
     address public sushiRouter;
     mapping(address => bool) approvedBaseTokens;
+    address public aaveDistributionController;
 
     //Constuctor
     constructor(
         IERC20 _BNPL,
         address _lendingPoolAddressesProvider,
         address _sushiRouter,
-        address _treasury
+        address _aaveDistributionController
     ) {
         BNPL = _BNPL;
         lendingPoolAddressesProvider = _lendingPoolAddressesProvider;
         sushiRouter = _sushiRouter;
+        aaveDistributionController = _aaveDistributionController;
     }
 
     //STATE CHANGING FUNCTIONS
@@ -34,10 +34,9 @@ contract BNPLFactory is Ownable {
      * Creates a new banking node
      */
     function createNewNode(
-        ERC20 _baseToken,
+        IERC20 _baseToken,
         bool _requireKYC,
-        uint256 _gracePeriod,
-        uint256 _agentFee
+        uint256 _gracePeriod
     ) external returns (address node) {
         //collect the BNPL
         BNPL.transferFrom(msg.sender, address(this), 2000000 * 10**18);
@@ -53,19 +52,19 @@ contract BNPLFactory is Ownable {
         }
 
         BankingNode(node).initialize(
-            _baseToken,
+            address(_baseToken),
             BNPL,
             _requireKYC,
             msg.sender,
             _gracePeriod,
             lendingPoolAddressesProvider,
             sushiRouter,
-            _agentFee
+            aaveDistributionController
         );
         BNPL.approve(node, 2000000 * 10**18);
         BankingNode(node).stake(2000000 * 10**18);
         bankingNodesList.push(msg.sender);
-        activeNodes[msg.sender] = node;
+        operatorToNode[msg.sender] = node;
     }
 
     //ONLY OWNER FUNCTIONS
@@ -83,7 +82,7 @@ contract BNPLFactory is Ownable {
      * Get node address of a operator
      */
     function getNode(address _operator) external view returns (address) {
-        return activeNodes[_operator];
+        return operatorToNode[_operator];
     }
 
     /**
