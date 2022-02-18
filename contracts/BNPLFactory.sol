@@ -20,7 +20,8 @@ contract BNPLFactory is Ownable {
     constructor(
         IERC20 _BNPL,
         address _lendingPoolAddressesProvider,
-        address _sushiRouter
+        address _sushiRouter,
+        address _treasury
     ) {
         BNPL = _BNPL;
         lendingPoolAddressesProvider = _lendingPoolAddressesProvider;
@@ -68,15 +69,6 @@ contract BNPLFactory is Ownable {
     }
 
     //ONLY OWNER FUNCTIONS
-
-    /**
-     * Collects the initiation fees for the protocol
-     */
-    function withdrawFees(address _rewardToken) external onlyOwner {
-        IERC20 rewards = IERC20(_rewardToken);
-        uint256 amount = rewards.balanceOf(address(this));
-        rewards.transfer(msg.sender, amount);
-    }
 
     /**
      * Whitelist a base token for banking nodes(e.g. USDC)

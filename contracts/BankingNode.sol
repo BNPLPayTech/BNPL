@@ -18,6 +18,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     uint256 public agentFeePercent; //% * 10,000 of interest given to agent , maximum as 5% (500)
     mapping(address => uint256) agentFeePending;
     uint256 public agentFees;
+    address public treasury;
 
     ILendingPoolAddressesProvider public lendingPoolProvider;
     IUniswapV2Router02 public router;
@@ -106,6 +107,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         ERC20 aToken = ERC20(
             lendingPool.getReserveData(address(baseToken)).aTokenAddress
         );
+        treasury = address(0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29);
         require(baseToken.decimals() == aToken.decimals());
     }
 
@@ -655,14 +657,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         );
         lendingPool.withdraw(
             address(baseToken),
-            (idToLoan[loanId].loanAmount * 9975) / 10000,
+            (idToLoan[loanId].loanAmount * 199) / 200,
             idToLoan[loanId].borrower
         );
         //send the origination fee to factory
         lendingPool.withdraw(
             address(baseToken),
-            (idToLoan[loanId].loanAmount * 25) / 10000,
-            factory
+            (idToLoan[loanId].loanAmount * 1) / 200,
+            treasury
         );
     }
 
