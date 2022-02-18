@@ -25,7 +25,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
 
     //For loans
     mapping(uint256 => Loan) idToLoan;
-    mapping(uint256 => string) idToMessage;
     uint256[] public pendingRequests;
     uint256[] public currentLoans;
     uint256[] public defaultedLoans;
@@ -36,6 +35,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     mapping(address => uint256) public stakingShares;
     mapping(address => uint256) lastStakeTime;
     mapping(address => uint256) unbondingShares;
+
+    //For Collateral
+    mapping(address => uint256) collateralOwed;
 
     uint256 public unbondingAmount;
     uint256 public totalUnbondingShares;
@@ -57,6 +59,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 numberOfPayments;
         uint256 principalRemaining;
         uint256 paymentsMade;
+        address collateral;
+        uint256 collateralAmount;
     }
 
     constructor() {
@@ -115,6 +119,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 interestRate,
         bool interestOnly,
         address agent, //set to operator if no agent
+        address collateral,
+        uint256 collateralAmount,
         string memory message
     ) external returns (uint256 requestId) {
         //bank node must be active
@@ -125,7 +131,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         requestId = incrementor;
         incrementor++;
         pendingRequests.push(requestId);
-
         idToLoan[requestId] = Loan(
             msg.sender,
             agent,
@@ -136,10 +141,86 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             interestRate, //annualized interest rate
             numberOfPayments,
             0, //initalize principalRemaining to 0
-            0 //intialize paymentsMade to 0
+            0, //intialize paymentsMade to 0
+            collateral,
+            collateralAmount
         );
-        //record the message
-        idToMessage[requestId] = message;
+        //emit the message
+
+        //post the collateral if any
+        if (collateralAmount > 0) {
+            //update the collateral owed (interest accrued on collateral is given to lend)
+            collateralOwed[collateral] += collateralAmount;
+            //collect the collateral
+            IERC20 bond = IERC20(collateral);
+            bond.transferFrom(msg.sender, address(this), collateralAmount);
+            //deposit the collateral in AAVE to accrue interest
+            ILendingPool lendingPool = ILendingPool(
+                lendingPoolProvider.getLendingPool()
+            );
+            bond.approve(address(lendingPool), collateralAmount);
+            lendingPool.deposit(
+                address(bond),
+                collateralAmount,
+                address(this),
+                0
+            );
+        }
+    }
+
+    /**
+     * Withdraw the collateral from a loan
+     */
+    function withdrawCollateral(uint256 loanId) public {
+        //must be the borrower or operator to withdraw, and loan must be either paid/not initiated
+        require(msg.sender == idToLoan[loanId].borrower);
+        require(idToLoan[loanId].principalRemaining == 0);
+
+        ILendingPool lendingPool = ILendingPool(
+            lendingPoolProvider.getLendingPool()
+        );
+        lendingPool.withdraw(
+            idToLoan[loanId].collateral,
+            idToLoan[loanId].collateralAmount,
+            idToLoan[loanId].borrower
+        );
+        //update the amounts
+        collateralOwed[idToLoan[loanId].collateral] -= idToLoan[loanId]
+            .collateralAmount;
+        idToLoan[loanId].collateralAmount = 0;
+    }
+
+    /**
+     * Collect the interest earnt on collateral to distribute to stakers
+     */
+    function collectCollateralFees(address collateral) external {
+        //get the aToken address
+        ILendingPool lendingPool = ILendingPool(
+            lendingPoolProvider.getLendingPool()
+        );
+        IERC20 aToken = IERC20(
+            lendingPool.getReserveData(collateral).aTokenAddress
+        );
+        uint256 feesAccrued = aToken.balanceOf(address(this)) -
+            collateralOwed[collateral];
+        //ensure there is collateral to collect
+        require(feesAccrued > 0);
+        lendingPool.withdraw(collateral, feesAccrued, address(this));
+        //convert the fees to BNPL to give to stakers
+        uint256 deadline = block.timestamp;
+        //as BNPL-ETH is the most liquid pair, always set path to collateral > ETH > BNPL
+        address[] memory path = new address[](3);
+        path[0] = collateral;
+        path[1] = router.WETH();
+        path[2] = address(BNPL);
+        //swap for BNPL (0 slippage as small amounts)
+        router.swapExactTokensForTokens(
+            feesAccrued,
+            0,
+            path,
+            address(this),
+            deadline
+        );
     }
 
     /*
@@ -524,22 +605,23 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     function donateBaseToken(uint256 _amount) external {
         require(_amount > 0);
         baseToken.transferFrom(msg.sender, address(this), _amount);
-    }
-
-    /**
-     * Donate BNPL for when debt is collected post default
-     */
-    function donateBnpl(uint256 _amount) external {
-        require(_amount > 0);
-        BNPL.transferFrom(msg.sender, address(this), _amount);
+        //add donation to AAVE
+        ILendingPool lendingPool = ILendingPool(
+            lendingPoolProvider.getLendingPool()
+        );
+        baseToken.approve(address(lendingPool), _amount);
+        lendingPool.deposit(address(baseToken), _amount, address(this), 0);
     }
 
     //OPERATOR ONLY FUNCTIONS
 
     /**
      * Approve a pending loan request
+     * Ensures collateral amount has been posted to prevent front run withdrawal
      */
-    function approveLoan(uint256 loanId) external {
+    function approveLoan(uint256 loanId, uint256 requiredCollateralAmount)
+        external
+    {
         require(msg.sender == operator);
         //check node is active
         require(
@@ -548,6 +630,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         );
         //ensure the loan was never started
         require(idToLoan[loanId].loanStartTime == 0);
+        //ensure the collateral is still posted
+        require(idToLoan[loanId].collateralAmount == requiredCollateralAmount);
 
         //remove from loanRequests and add loan to current loans
         for (uint256 i = 0; i < pendingRequests.length; i++) {
@@ -637,29 +721,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Get the current AAVE Lending Pool
-     */
-    function getLendingPool() public view returns (address lendingPool) {
-        lendingPool = lendingPoolProvider.getLendingPool();
-    }
-
-    /**
-     * Convert shares to BNPL Value
-     */
-    function getBNPLConversion(uint256 _amount)
-        public
-        view
-        returns (uint256 what)
-    {
-        what =
-            (_amount *
-                (BNPL.balanceOf(address(this)) -
-                    slashingBalance -
-                    unbondingAmount)) /
-            (totalStakingShares);
-    }
-
-    /**
      * Gets the next payment amount due
      * If loan is completed or not approved, returns 0
      */
@@ -723,13 +784,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Check whether a node is considered active (based on Bonding Balance)
-     */
-    function isNodeActive() public view returns (bool) {
-        return getBNPLBalance(operator) >= 2000000 * 10**18;
-    }
-
-    /**
      * Get the total assets (accounts receivable + aToken balance)
      * Only principal owed is counted as accounts receivable
      */
@@ -758,17 +812,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Gets the message given to a node for a loan request
-     */
-    function getLoanMessage(uint256 loanId)
-        public
-        view
-        returns (string memory)
-    {
-        return idToMessage[loanId];
-    }
-
-    /**
      * Get number of pending requests
      */
     function getPendingRequestCount() public view returns (uint256) {
@@ -793,14 +836,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Get the node operators pending rewards
      */
-    function getPendingOperatorRewards() public view returns (uint256) {
+    function getPendingOperatorRewards() external view returns (uint256) {
         return (baseToken.balanceOf(address(this)) - agentFees) / 3;
     }
 
     /**
      * Get the pending staker rewards
      */
-    function getPendingStakerRewards() public view returns (uint256) {
+    function getPendingStakerRewards() external view returns (uint256) {
         return ((baseToken.balanceOf(address(this)) - agentFees) * 2) / 3;
     }
 

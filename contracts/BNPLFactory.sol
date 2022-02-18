@@ -85,15 +85,6 @@ contract BNPLFactory is Ownable {
         approvedBaseTokens[_baseToken] = true;
     }
 
-    /**
-     * Delist a base token for banking nodes
-     */
-    function delistToken(address _baseToken) external onlyOwner {
-        //token must already be approved
-        require(approvedBaseTokens[_baseToken]);
-        approvedBaseTokens[_baseToken] = false;
-    }
-
     //GETTOR FUNCTIONS
 
     /**
