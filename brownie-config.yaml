@@ -1,0 +1,25 @@
+dependencies:
+  - smartcontractkit/chainlink-brownie-contracts@0.2.2
+  - OpenZeppelin/openzeppelin-contracts@4.2.0
+  - OpenZeppelin/openzeppelin-contracts@3.4.0
+compiler:
+  solc:
+    remappings:
+      - '@chainlink=smartcontractkit/chainlink-brownie-contracts@0.2.2'
+      - '@openzeppelin=OpenZeppelin/openzeppelin-contracts@4.2.0'
+      - '@openzeppelin1=OpenZeppelin/openzeppelin-contracts@3.4.0'
+dotenv: .env
+networks:
+  default: kovan
+  mainnet: 
+    verify: false
+    sushiRouter: ''
+  kovan:
+    verify: false
+    lendingPoolAddressesProvider: '0x88757f2f99175387aB4C6a4b3067c77A695b0349'
+    router: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'
+    usdtreal: '0x13512979ade267ab5100878e2e0f485b568328a4'
+    usdt: '0x4c6E1EFC12FDfD568186b7BAEc0A43fFfb4bCcCf'
+wallets:
+  key1: ${PRIVATE_KEY1}
+  key2: ${PRIVATE_KEY2}
