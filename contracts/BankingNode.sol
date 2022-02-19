@@ -544,8 +544,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Declare a loan defaulted and slash the loan
      * Can be called by anyone
      * Move BNPL to a slashing balance, to be market sold in seperate function to prevent minOut failure
+     * minOut used for slashing sale, if no collateral, put 0
      */
-    function slashLoan(uint256 loanId) external {
+    function slashLoan(uint256 loanId, uint256 minOut) external {
         //require that the given due date and grace period have expired
         require(block.timestamp > getNextDueDate(loanId) + gracePeriod);
         //check that the loan has remaining payments
@@ -562,6 +563,17 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         unbondingAmount -= unbondingSlash;
         stakingSlash -= stakingSlash;
         defaultedLoans.push(loanId);
+        //sell collateral if any
+        if (idToLoan[loanId].collateralAmount != 0) {
+            _swapToken(
+                idToLoan[loanId].collateral,
+                address(baseToken),
+                minOut,
+                idToLoan[loanId].collateralAmount
+            );
+            //update collateral info
+            idToLoan[loanId].collateralAmount = 0;
+        }
     }
 
     /**
