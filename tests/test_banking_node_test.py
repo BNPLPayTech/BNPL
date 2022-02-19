@@ -287,8 +287,36 @@ def test_banking_node_regular_loan():
             {"from": account2},
         )
 
+    # Collateral Loan with BUSD as collateral
+
+    busd_address = config["networks"][network.show_active()]["busd"]
+    busd = interface.IERC20(usdt_address)
+    initial_busd_balance = busd.balanceOf(account2)
+
+    approve_erc20(COLLAT_AMOUNT, node_address, busd_address, account2)
+
     tx = node.requestLoan(
-        USDT_AMOUNT,
+        USDT_AMOUNT / 2,
+        payment_interval,
+        12,
+        1000,
+        False,
+        "0x0000000000000000000000000000000000000000",
+        0,
+        "collateral loan",
+        {"from": account2},
+    )
+    tx.wait(1)
+
+    # Check loan was approved and collateral posted
+    assert node.getPendingRequestCount() == 1
+    assert busd.balanceOf(account2) < initial_busd_balance
+    assert node.collateralOwed(busd_address) == COLLAT_AMOUNT
+
+    # Request a second loan with no collateral
+
+    tx = node.requestLoan(
+        USDT_AMOUNT / 2,
         payment_interval,
         12,
         1000,
@@ -300,4 +328,4 @@ def test_banking_node_regular_loan():
     )
     tx.wait(1)
 
-    assert node.getPendingRequestCount() == 1
+    assert node.getPendingRequestCount() == 2

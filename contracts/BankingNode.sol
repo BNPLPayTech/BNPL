@@ -15,7 +15,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     ERC20 public baseToken; //base liquidity token, e.g. USDT or USDC
     uint256 public incrementor;
     uint256 public gracePeriod;
-    bool requireKYC;
+    bool public requireKYC;
 
     address public treasury;
 
@@ -35,11 +35,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     uint256 public accountsReceiveable;
     mapping(address => bool) public whitelistedAddresses;
     mapping(address => uint256) public stakingShares;
-    mapping(address => uint256) lastStakeTime;
-    mapping(address => uint256) unbondingShares;
+    mapping(address => uint256) public lastStakeTime;
+    mapping(address => uint256) public unbondingShares;
 
     //For Collateral
-    mapping(address => uint256) collateralOwed;
+    mapping(address => uint256) public collateralOwed;
     uint256 public unbondingAmount;
     uint256 public totalUnbondingShares;
     uint256 public totalStakingShares;
@@ -167,16 +167,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             IERC20 bond = IERC20(collateral);
             bond.transferFrom(msg.sender, address(this), collateralAmount);
             //deposit the collateral in AAVE to accrue interest
-            ILendingPool lendingPool = ILendingPool(
-                lendingPoolProvider.getLendingPool()
-            );
-            bond.approve(address(lendingPool), collateralAmount);
-            lendingPool.deposit(
-                address(bond),
-                collateralAmount,
-                address(this),
-                0
-            );
+            _depositToLendingPool(collateral, collateralAmount);
         }
         emit LoanRequest(requestId);
     }
@@ -279,20 +270,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         //make payment
         baseToken.transferFrom(msg.sender, address(this), paymentAmount);
-        //get the latest lending pool address
-        ILendingPool lendingPool = _getLendingPool();
         //deposit the tokens into AAVE on behalf of the pool contract, withholding 30% and the interest as baseToken
         uint256 interestWithheld = ((interestPortion * 3) / 10);
-        baseToken.approve(
-            address(lendingPool),
+
+        _depositToLendingPool(
+            address(baseToken),
             paymentAmount - interestWithheld
         );
-        lendingPool.deposit(
-            address(baseToken),
-            paymentAmount - interestWithheld,
-            address(this),
-            0
-        );
+
         //increment the loan status
         idToLoan[loanId].paymentsMade++;
         //check if it was the final payment
@@ -326,18 +311,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
 
         uint256 interestWithheld = ((interestAmount * 3) / 10);
 
-        ILendingPool lendingPool = _getLendingPool();
-        //deposit the tokens into AAVE on behalf of the pool contract
-        baseToken.approve(
-            address(lendingPool),
+        _depositToLendingPool(
+            address(baseToken),
             paymentAmount - interestWithheld
         );
-        lendingPool.deposit(
-            address(baseToken),
-            paymentAmount - interestWithheld,
-            address(this),
-            0
-        );
+
         //update accounts
         accountsReceiveable -= idToLoan[loanId].principalRemaining;
         idToLoan[loanId].principalRemaining = 0;
@@ -405,11 +383,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             address(this),
             _amount
         );
-        //get the latest lending pool address
-        ILendingPool lendingPool = _getLendingPool();
-        //deposit the tokens into AAVE on behalf of the pool contract
-        baseToken.approve(address(lendingPool), _amount);
-        lendingPool.deposit(address(baseToken), _amount, address(this), 0);
+
+        _depositToLendingPool(address(baseToken), _amount);
 
         emit baseTokenDeposit(msg.sender, _amount);
     }
@@ -581,9 +556,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         );
         slashingBalance = 0;
         //deposit the baseToken into AAVE
-        ILendingPool lendingPool = _getLendingPool();
-        baseToken.approve(address(lendingPool), baseTokenOut);
-        lendingPool.deposit(address(baseToken), baseTokenOut, address(this), 0);
+        _depositToLendingPool(address(baseToken), baseTokenOut);
 
         emit slashingSale(slashingBalance, baseTokenOut);
     }
@@ -596,14 +569,20 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         require(_amount > 0);
         baseToken.transferFrom(msg.sender, address(this), _amount);
         //add donation to AAVE
-        ILendingPool lendingPool = _getLendingPool();
-        baseToken.approve(address(lendingPool), _amount);
-        lendingPool.deposit(address(baseToken), _amount, address(this), 0);
-
+        _depositToLendingPool(address(baseToken), _amount);
         emit baseTokensDonated(_amount);
     }
 
     //PRIVATE FUNCTIONS
+
+    /**
+     * Deposit token onto AAVE
+     */
+    function _depositToLendingPool(address tokenIn, uint256 amountIn) private {
+        ILendingPool lendingPool = _getLendingPool();
+        TransferHelper.safeApprove(tokenIn, address(lendingPool), amountIn);
+        lendingPool.deposit(tokenIn, amountIn, address(this), 0);
+    }
 
     /**
      * Get the latest AAVE Lending Pool contract
