@@ -8,7 +8,15 @@ from scripts.deploy import (
 )
 import pytest
 import time
-from brownie import BNPLFactory, BNPLToken, BankingNode, Contract, config, network
+from brownie import (
+    BNPLFactory,
+    BNPLToken,
+    BankingNode,
+    Contract,
+    config,
+    network,
+    interface,
+)
 from web3 import Web3
 
 BOND_AMOUNT = Web3.toWei(2000000, "ether")
@@ -143,7 +151,6 @@ def test_banking_node_regular_loan():
 
     # Check return values of loan getter functions
     loan_id = node.pendingRequests(0)
-    assert node.getLoanMessage(loan_id) == "tester loan"
     assert node.getNextDueDate(loan_id) == 0
     assert node.getNextPayment(loan_id) == 0
 
@@ -166,10 +173,6 @@ def test_banking_node_regular_loan():
         and node.getTotalAssetValue() < USDT_AMOUNT * 2.01
     )
     assert node.accountsReceiveable() == USDT_AMOUNT
-    assert (
-        node.getLiquidAssets() >= USDT_AMOUNT * 0.99
-        and node.getLiquidAssets() < USDT_AMOUNT * 1.01
-    )
 
     # Check the new value of loan getter functions
     assert (
@@ -213,15 +216,13 @@ def test_banking_node_regular_loan():
     )
 
     # Check there is baseToken for the operator, stakers
-    operator_rewards = USDT_AMOUNT * 0.1 / 12 * 0.1
-    staking_rewards = USDT_AMOUNT * 0.1 / 12 * 0.2
+    base_token_withheld = USDT_AMOUNT * 0.1 / 12 * 0.3
+    usdt_address = config["networks"][network.show_active()]["usdt"]
+    usdt = interface.IERC20(usdt_address)
+
     assert (
-        node.getPendingOperatorRewards() >= operator_rewards * 0.99
-        and node.getPendingOperatorRewards() <= operator_rewards * 1.01
-    )
-    assert (
-        node.getPendingStakerRewards() >= staking_rewards * 0.99
-        and node.getPendingStakerRewards() <= staking_rewards * 1.01
+        usdt.balanceOf(node_address) >= base_token_withheld * 0.99
+        and usdt.balanceOf(node_address) <= base_token_withheld * 1.01
     )
 
     # Make the remaining 11 payments
@@ -236,20 +237,16 @@ def test_banking_node_regular_loan():
     # Check on details
     total_interest_paid = 5.50 * 10**6  # 5.50 USDT
     expected_end_balance = USDT_AMOUNT * 2 + total_interest_paid * 0.7
-    operator_rewards = total_interest_paid * 0.1
-    staking_rewards = total_interest_paid * 0.2
+    usdt_witheld = total_interest_paid * 0.3
+
     assert (
         node.getTotalAssetValue() >= expected_end_balance * 0.99
         and node.getTotalAssetValue() <= expected_end_balance * 1.01
     )
     assert node.accountsReceiveable() < USDT_AMOUNT * 0.00001
     assert (
-        node.getPendingOperatorRewards() >= operator_rewards * 0.99
-        and node.getPendingOperatorRewards() <= operator_rewards * 1.01
-    )
-    assert (
-        node.getPendingStakerRewards() >= staking_rewards * 0.99
-        and node.getPendingStakerRewards() <= staking_rewards * 1.01
+        usdt.balanceOf(node_address) >= usdt_witheld * 0.99
+        and usdt.balanceOf(node_address) <= usdt_witheld * 1.01
     )
 
     # Deploy liquidity on Uniswap for BNPL/ETH
