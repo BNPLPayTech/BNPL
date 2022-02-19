@@ -34,6 +34,7 @@ def deploy_bnpl_factory(bnpl, weth):
         config["networks"][network.show_active()]["aaveDistributionController"],
         config["networks"][network.show_active()]["factory"],
         {"from": account},
+        publish_source=config["networks"][network.show_active()].get("verify"),
     )
     return bnpl_factory
 
@@ -72,13 +73,14 @@ def add_lp(token):
         time.time() * 10,
         {"from": account, "value": LP_ETH},
     )
+    tx.wait(1)
     print("Adding BNPL Liquidity to SushiSwap")
 
 
 def main():
     account = get_account()
     bnpl_factory = deploy_bnpl_factory(
-        BNPLToken[-1], config["networks"][network.show_active()]["sushiRouter"]
+        BNPLToken[-1], config["networks"][network.show_active()]["weth"]
     )
     whitelist_usdt(bnpl_factory)
     approve_erc20(BOND_AMOUNT, bnpl_factory, BNPLToken[-1], account)

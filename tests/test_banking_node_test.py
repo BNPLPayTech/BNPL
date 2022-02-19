@@ -21,6 +21,7 @@ from web3 import Web3
 
 BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6  # 100 USDT
+COLLAT_AMOUNT = 10**18
 
 
 def test_banking_node_regular_loan():
@@ -46,6 +47,10 @@ def test_banking_node_regular_loan():
     # Check that node was created
     node_address = factory.getNode(account)
     node = Contract.from_abi(BankingNode._name, node_address, BankingNode.abi)
+
+    # Check node immutables
+    assert node.uniswapFactory() == config["networks"][network.show_active()]["factory"]
+    assert node.WETH() == config["networks"][network.show_active()]["weth"]
 
     # Check that 2M BNPL was bonded
     assert node.getBNPLBalance(account) == BOND_AMOUNT
@@ -262,7 +267,26 @@ def test_banking_node_regular_loan():
     assert usdt.balanceOf(account) > initial_operator_usdt
     assert usdt.balanceOf(node_address) == 0
 
-    # Test on a slashing loan
+    # Test on a slashing loan + collateral loan at same time
+    # 1 second interval to allow slashing
+    payment_interval = 1
+
+    # check that collateral loan fails if collateral can not be deposited into aave
+    approve_erc20(COLLAT_AMOUNT, node_address, bnpl, account2)
+
+    with pytest.raises(Exception):
+        tx = node.requestLoan(
+            USDT_AMOUNT,
+            payment_interval,
+            12,
+            1000,
+            False,
+            bnpl,
+            COLLAT_AMOUNT,
+            "collateral loan",
+            {"from": account2},
+        )
+
     tx = node.requestLoan(
         USDT_AMOUNT,
         payment_interval,
@@ -275,4 +299,5 @@ def test_banking_node_regular_loan():
         {"from": account2},
     )
     tx.wait(1)
+
     assert node.getPendingRequestCount() == 1

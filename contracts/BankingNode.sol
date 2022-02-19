@@ -23,7 +23,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     IAaveIncentivesController public aaveRewardController;
     ILendingPoolAddressesProvider public lendingPoolProvider;
     address public WETH;
-    address public immutable factory;
+    address public immutable bnplFactory;
 
     //For loans
     mapping(uint256 => Loan) idToLoan;
@@ -78,7 +78,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     event slashingSale(uint256 bnplSold, uint256 baseTokenRecovered);
 
     constructor() {
-        factory = msg.sender;
+        bnplFactory = msg.sender;
     }
 
     //STATE CHANGING FUNCTIONS
@@ -99,7 +99,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     ) external {
         //only to be done by factory
         require(
-            msg.sender == factory,
+            msg.sender == bnplFactory,
             "Set up can only be done through BNPL Factory"
         );
         baseToken = ERC20(_baseToken);
@@ -399,7 +399,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         _mint(msg.sender, what);
         //transfer tokens from the user
-        baseToken.transferFrom(msg.sender, address(this), _amount);
+        TransferHelper.safeTransferFrom(
+            address(baseToken),
+            msg.sender,
+            address(this),
+            _amount
+        );
         //get the latest lending pool address
         ILendingPool lendingPool = _getLendingPool();
         //deposit the tokens into AAVE on behalf of the pool contract
@@ -439,7 +444,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             );
         }
         //require bankingNode to be active (operator must have 2M BNPL staked)
-        if (msg.sender != factory && msg.sender != operator) {
+        if (msg.sender != bnplFactory && msg.sender != operator) {
             require(
                 getBNPLBalance(operator) >= 1500000 * 10**18,
                 "Banking node is currently not active"
@@ -447,7 +452,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         address staker = msg.sender;
         //factory initial bond counted as operator
-        if (msg.sender == factory) {
+        if (msg.sender == bnplFactory) {
             staker = operator;
         }
         //set the time of the stake
@@ -641,7 +646,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //ensure slippage
         require(amounts[amounts.length - 1] >= minOut, "Insufficient outout");
         TransferHelper.safeTransfer(
-            path[0],
+            tokenIn,
             UniswapV2Library.pairFor(uniswapFactory, path[0], path[1]),
             amounts[0]
         );
@@ -650,12 +655,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     // **** SWAP ****
+    // Copied directly from UniswapV2Router
     // requires the initial amount to have already been sent to the first pair
     function _swap(
         uint256[] memory amounts,
         address[] memory path,
         address _to
-    ) private {
+    ) internal virtual {
         for (uint256 i; i < path.length - 1; i++) {
             (address input, address output) = (path[i], path[i + 1]);
             (address token0, ) = UniswapV2Library.sortTokens(input, output);
