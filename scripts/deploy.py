@@ -14,8 +14,8 @@ import time
 GRACE_PERIOD = 0
 BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6
-LP_AMOUNT = 10 * 10**7
-LP_ETH = 10**17
+LP_AMOUNT = 10 * 10**19
+LP_ETH = 10**16
 
 
 def deploy_bnpl_token():
@@ -24,14 +24,15 @@ def deploy_bnpl_token():
     return bnpl
 
 
-def deploy_bnpl_factory(bnpl, router):
+def deploy_bnpl_factory(bnpl, weth):
     account = get_account()
     print("Creating BNPL Factory..")
     bnpl_factory = BNPLFactory.deploy(
         bnpl,
         config["networks"][network.show_active()]["lendingPoolAddressesProvider"],
-        router,
+        weth,
         config["networks"][network.show_active()]["aaveDistributionController"],
+        config["networks"][network.show_active()]["factory"],
         {"from": account},
     )
     return bnpl_factory
@@ -56,14 +57,14 @@ def create_node(bnpl_factory):
     tx.wait(1)
 
 
-def add_lp(dojo_token):
+def add_lp(token):
     account = get_account()
     uniswap_router = interface.IUniswapV2Router02(
         config["networks"][network.show_active()].get("router")
     )
-    approve_erc20(LP_AMOUNT, uniswap_router, dojo_token, account)
+    approve_erc20(LP_AMOUNT, uniswap_router, token, account)
     tx = uniswap_router.addLiquidityETH(
-        dojo_token,
+        token,
         LP_AMOUNT,
         0,
         0,

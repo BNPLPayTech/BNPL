@@ -33,7 +33,7 @@ def test_banking_node_regular_loan():
 
     # Deploy factory
     factory = deploy_bnpl_factory(
-        BNPLToken[-1], config["networks"][network.show_active()]["router"]
+        BNPLToken[-1], config["networks"][network.show_active()]["weth"]
     )
 
     # Whitelist USDT for the factory
@@ -121,7 +121,6 @@ def test_banking_node_regular_loan():
 
     # Check balance was updated
     assert node.getBaseTokenBalance(account2) <= USDT_AMOUNT * 0.01
-    assert node.getBaseTokenBalance(account2) > 0
 
     # Check can not withdraw more than deposited amount
     with pytest.raises(Exception):
@@ -254,3 +253,26 @@ def test_banking_node_regular_loan():
 
     # Test collecting fees
     initial_operator_bnpl = node.getBNPLBalance(account)
+    initial_operator_usdt = usdt.balanceOf(account)
+    tx = node.collectFees({"from": account})
+    tx.wait(1)
+
+    # Check rewards were distributed
+    assert node.getBNPLBalance(account) > initial_operator_bnpl
+    assert usdt.balanceOf(account) > initial_operator_usdt
+    assert usdt.balanceOf(node_address) == 0
+
+    # Test on a slashing loan
+    tx = node.requestLoan(
+        USDT_AMOUNT,
+        payment_interval,
+        12,
+        1000,
+        False,
+        "0x0000000000000000000000000000000000000000",
+        0,
+        "slashing loan",
+        {"from": account2},
+    )
+    tx.wait(1)
+    assert node.getPendingRequestCount() == 1

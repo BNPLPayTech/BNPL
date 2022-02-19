@@ -5,13 +5,15 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./BankingNode.sol";
+import "./libraries/TransferHelper.sol";
 
 contract BNPLFactory is Ownable {
     mapping(address => address) operatorToNode;
     address[] public bankingNodesList;
     IERC20 public immutable BNPL;
     address public immutable lendingPoolAddressesProvider;
-    address public sushiRouter;
+    address public immutable WETH;
+    address public immutable uniswapFactory;
     mapping(address => bool) approvedBaseTokens;
     address public aaveDistributionController;
 
@@ -19,13 +21,15 @@ contract BNPLFactory is Ownable {
     constructor(
         IERC20 _BNPL,
         address _lendingPoolAddressesProvider,
-        address _sushiRouter,
-        address _aaveDistributionController
+        address _WETH,
+        address _aaveDistributionController,
+        address _uniswapFactory
     ) {
         BNPL = _BNPL;
         lendingPoolAddressesProvider = _lendingPoolAddressesProvider;
-        sushiRouter = _sushiRouter;
+        WETH = _WETH;
         aaveDistributionController = _aaveDistributionController;
+        uniswapFactory = _uniswapFactory;
     }
 
     //STATE CHANGING FUNCTIONS
@@ -58,8 +62,9 @@ contract BNPLFactory is Ownable {
             msg.sender,
             _gracePeriod,
             lendingPoolAddressesProvider,
-            sushiRouter,
-            aaveDistributionController
+            WETH,
+            aaveDistributionController,
+            uniswapFactory
         );
         BNPL.approve(node, 2000000 * 10**18);
         BankingNode(node).stake(2000000 * 10**18);

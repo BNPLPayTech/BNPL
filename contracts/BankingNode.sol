@@ -5,11 +5,13 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./interfaces/ILendingPool.sol";
 import "./interfaces/ILendingPoolAddressesProvider.sol";
-import "./interfaces/IUniswapV2Router02.sol";
 import "./interfaces/IAaveIncentivesController.sol";
+import "./libraries/UniswapV2Library.sol";
+import "./libraries/TransferHelper.sol";
 
 contract BankingNode is ERC20("BNPL USD", "bUSD") {
     address public operator;
+
     ERC20 public baseToken; //base liquidity token, e.g. USDT or USDC
     uint256 public incrementor;
     uint256 public gracePeriod;
@@ -17,9 +19,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
 
     address public treasury;
 
+    address public uniswapFactory;
     IAaveIncentivesController public aaveRewardController;
     ILendingPoolAddressesProvider public lendingPoolProvider;
-    IUniswapV2Router02 public router;
+    address public WETH;
     address public immutable factory;
 
     //For loans
@@ -90,8 +93,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         address _operator,
         uint256 _gracePeriod,
         address _lendingPoolProvider,
-        address _sushiRouter,
-        address _aaveDistributionController
+        address _WETH,
+        address _aaveDistributionController,
+        address _uniswapFactory
     ) external {
         //only to be done by factory
         require(
@@ -109,14 +113,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         aaveRewardController = IAaveIncentivesController(
             _aaveDistributionController
         );
-        router = IUniswapV2Router02(_sushiRouter);
+        WETH = _WETH;
         //decimal check on baseToken and aToken to make sure math logic on future steps
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         ERC20 aToken = ERC20(
             lendingPool.getReserveData(address(baseToken)).aTokenAddress
         );
+        uniswapFactory = _uniswapFactory;
         treasury = address(0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29);
         require(baseToken.decimals() == aToken.decimals());
     }
@@ -136,7 +139,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     ) external returns (uint256 requestId) {
         //bank node must be active
         require(
-            getBNPLBalance(operator) >= 2000000 * 10**18,
+            getBNPLBalance(operator) >= 1500000 * 10**18,
             "Banking node is currently not active"
         );
         requestId = incrementor;
@@ -186,9 +189,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         require(msg.sender == idToLoan[loanId].borrower);
         require(idToLoan[loanId].principalRemaining == 0);
 
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         lendingPool.withdraw(
             idToLoan[loanId].collateral,
             idToLoan[loanId].collateralAmount,
@@ -234,9 +235,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function collectCollateralFees(address collateral) external {
         //get the aToken address
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         IERC20 aToken = IERC20(
             lendingPool.getReserveData(collateral).aTokenAddress
         );
@@ -281,9 +280,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //make payment
         baseToken.transferFrom(msg.sender, address(this), paymentAmount);
         //get the latest lending pool address
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         //deposit the tokens into AAVE on behalf of the pool contract, withholding 30% and the interest as baseToken
         uint256 interestWithheld = ((interestPortion * 3) / 10);
         baseToken.approve(
@@ -302,15 +299,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (
             idToLoan[loanId].paymentsMade == idToLoan[loanId].numberOfPayments
         ) {
-            //delete from current loans
-            for (uint256 i = 0; i < currentLoans.length; i++) {
-                if (loanId == currentLoans[i]) {
-                    currentLoans[i] = currentLoans[currentLoans.length - 1];
-                    currentLoans.pop();
-                }
-            }
+            _removeCurrentLoan(loanId);
         }
-
         emit loanPaymentMade(loanId);
     }
 
@@ -336,10 +326,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
 
         uint256 interestWithheld = ((interestAmount * 3) / 10);
 
-        //get the latest lending pool address
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         //deposit the tokens into AAVE on behalf of the pool contract
         baseToken.approve(
             address(lendingPool),
@@ -356,12 +343,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         idToLoan[loanId].principalRemaining = 0;
         //increment the loan status to final and remove from current loans array
         idToLoan[loanId].paymentsMade = idToLoan[loanId].numberOfPayments;
-        for (uint256 i = 0; i < currentLoans.length; i++) {
-            if (loanId == currentLoans[i]) {
-                currentLoans[i] = currentLoans[currentLoans.length - 1];
-                currentLoans.pop();
-            }
-        }
+        _removeCurrentLoan(loanId);
 
         emit loanRepaidEarly(loanId);
     }
@@ -372,13 +354,20 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function collectFees() external {
         //check there are tokens to swap
-        require(baseToken.balanceOf(address(this)) > 0);
+        require(
+            baseToken.balanceOf(address(this)) > 0,
+            "There are no rewards to collect"
+        );
         //33% to go to operator as baseToken
         uint256 operatorFees = (baseToken.balanceOf(address(this))) / 3;
-        uint256 stakingRewards = ((baseToken.balanceOf(address(this))) * 2) / 3;
         baseToken.transfer(operator, operatorFees);
-        _swapToken(address(baseToken), address(BNPL), 0, stakingRewards);
-
+        //remainder (67%) is traded for staking rewards
+        uint256 stakingRewards = _swapToken(
+            address(baseToken),
+            address(BNPL),
+            0,
+            baseToken.balanceOf(address(this))
+        );
         emit feesCollected(operatorFees, stakingRewards);
     }
 
@@ -395,7 +384,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         //bank node must be active
         require(
-            getBNPLBalance(operator) >= 2000000 * 10**18,
+            getBNPLBalance(operator) >= 1500000 * 10**18,
             "Banking node is currently not active"
         );
         //check the decimals of the
@@ -412,9 +401,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //transfer tokens from the user
         baseToken.transferFrom(msg.sender, address(this), _amount);
         //get the latest lending pool address
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         //deposit the tokens into AAVE on behalf of the pool contract
         baseToken.approve(address(lendingPool), _amount);
         lendingPool.deposit(address(baseToken), _amount, address(this), 0);
@@ -431,9 +418,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 what = (_amount * totalSupply()) / getTotalAssetValue();
         _burn(msg.sender, what);
         //get the latest lending pool address;
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         //withdraw the tokens to the user
         lendingPool.withdraw(address(baseToken), _amount, msg.sender);
 
@@ -456,7 +441,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //require bankingNode to be active (operator must have 2M BNPL staked)
         if (msg.sender != factory && msg.sender != operator) {
             require(
-                getBNPLBalance(operator) >= 2000000 * 10**18,
+                getBNPLBalance(operator) >= 1500000 * 10**18,
                 "Banking node is currently not active"
             );
         }
@@ -582,7 +567,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     function sellSlashed(uint256 minOut) external {
         //ensure there is a balance to sell
         require(slashingBalance > 0);
-        //As BNPL-ETH Pair is the most liquid, goes BNPL > WETH > baseToken
+        //As BNPL-ETH Pair is the most liquid, goes BNPL > ETH > baseToken
         uint256 baseTokenOut = _swapToken(
             address(BNPL),
             address(baseToken),
@@ -591,9 +576,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         );
         slashingBalance = 0;
         //deposit the baseToken into AAVE
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         baseToken.approve(address(lendingPool), baseTokenOut);
         lendingPool.deposit(address(baseToken), baseTokenOut, address(this), 0);
 
@@ -608,17 +591,37 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         require(_amount > 0);
         baseToken.transferFrom(msg.sender, address(this), _amount);
         //add donation to AAVE
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         baseToken.approve(address(lendingPool), _amount);
         lendingPool.deposit(address(baseToken), _amount, address(this), 0);
 
         emit baseTokensDonated(_amount);
     }
 
+    //PRIVATE FUNCTIONS
+
     /**
-     * Swaps token for BNPL
+     * Get the latest AAVE Lending Pool contract
+     */
+
+    function _getLendingPool() private view returns (ILendingPool) {
+        return ILendingPool(lendingPoolProvider.getLendingPool());
+    }
+
+    /**
+     * Remove current Loan
+     */
+    function _removeCurrentLoan(uint256 loanId) private {
+        for (uint256 i = 0; i < currentLoans.length; i++) {
+            if (loanId == currentLoans[i]) {
+                currentLoans[i] = currentLoans[currentLoans.length - 1];
+                currentLoans.pop();
+            }
+        }
+    }
+
+    /**
+     * Swaps token for BNPL, as BNPL-ETH is the only liquid pair, always goes through x > ETH > x
      */
     function _swapToken(
         address tokenIn,
@@ -627,19 +630,46 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 amountIn
     ) private returns (uint256) {
         address[] memory path = new address[](3);
-        uint256 deadline = block.timestamp;
         path[0] = tokenIn;
-        path[1] = router.WETH();
+        path[1] = WETH;
         path[2] = tokenOut;
-        IERC20(tokenIn).approve(address(router), amountIn);
-        uint256[] memory amounts = router.swapExactTokensForTokens(
+        uint256[] memory amounts = UniswapV2Library.getAmountsOut(
+            uniswapFactory,
             amountIn,
-            minOut,
-            path,
-            address(this),
-            deadline
+            path
         );
-        uint256 baseTokenOut = amounts[amounts.length - 1];
+        //ensure slippage
+        require(amounts[amounts.length - 1] >= minOut, "Insufficient outout");
+        TransferHelper.safeTransfer(
+            path[0],
+            UniswapV2Library.pairFor(uniswapFactory, path[0], path[1]),
+            amounts[0]
+        );
+        _swap(amounts, path, address(this));
+        return amounts[amounts.length - 1];
+    }
+
+    // **** SWAP ****
+    // requires the initial amount to have already been sent to the first pair
+    function _swap(
+        uint256[] memory amounts,
+        address[] memory path,
+        address _to
+    ) private {
+        for (uint256 i; i < path.length - 1; i++) {
+            (address input, address output) = (path[i], path[i + 1]);
+            (address token0, ) = UniswapV2Library.sortTokens(input, output);
+            uint256 amountOut = amounts[i + 1];
+            (uint256 amount0Out, uint256 amount1Out) = input == token0
+                ? (uint256(0), amountOut)
+                : (amountOut, uint256(0));
+            address to = i < path.length - 2
+                ? UniswapV2Library.pairFor(uniswapFactory, output, path[i + 2])
+                : _to;
+            IUniswapV2Pair(
+                UniswapV2Library.pairFor(uniswapFactory, input, output)
+            ).swap(amount0Out, amount1Out, to, new bytes(0));
+        }
     }
 
     //OPERATOR ONLY FUNCTIONS
@@ -654,7 +684,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         require(msg.sender == operator);
         //check node is active
         require(
-            getBNPLBalance(operator) >= 2000000 * 10**18,
+            getBNPLBalance(operator) >= 1500000 * 10**18,
             "Banking node is currently not active"
         );
         //ensure the loan was never started
@@ -673,24 +703,22 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         currentLoans.push(loanId);
 
-        //add the principal remianing and start the loan
+        //add the principal remaining and start the loan
         idToLoan[loanId].principalRemaining = idToLoan[loanId].loanAmount;
         idToLoan[loanId].loanStartTime = block.timestamp;
 
         //send the funds and update accounts (minus 0.25% origination fee)
         accountsReceiveable += idToLoan[loanId].loanAmount;
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         lendingPool.withdraw(
             address(baseToken),
             (idToLoan[loanId].loanAmount * 199) / 200,
             idToLoan[loanId].borrower
         );
-        //send the origination fee to factory
+        //send the origination fee to treasury and agent
         lendingPool.withdraw(
             address(baseToken),
-            (idToLoan[loanId].loanAmount * 1) / 200,
+            (idToLoan[loanId].loanAmount * 1) / 400,
             treasury
         );
 
@@ -708,11 +736,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Whitelist a given list of addresses
      */
-    function whitelistAddresses(address[] memory whitelistAddition) external {
+    function whitelistAddresses(address whitelistAddition) external {
         require(address(msg.sender) == operator);
-        for (uint256 i = 0; i < whitelistAddition.length; i++) {
-            whitelistedAddresses[whitelistAddition[i]] = true;
-        }
+        whitelistedAddresses[whitelistAddition] = true;
     }
 
     //VIEW ONLY FUNCTIONS
@@ -819,9 +845,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Only principal owed is counted as accounts receivable
      */
     function getTotalAssetValue() public view returns (uint256) {
-        ILendingPool lendingPool = ILendingPool(
-            lendingPoolProvider.getLendingPool()
-        );
+        ILendingPool lendingPool = _getLendingPool();
         IERC20 aToken = IERC20(
             lendingPool.getReserveData(address(baseToken)).aTokenAddress
         );
