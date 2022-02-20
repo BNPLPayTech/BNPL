@@ -85,6 +85,33 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         bnplFactory = msg.sender;
     }
 
+    // MODIFIERS
+
+    /**
+     * Ensure a node is active for deposit, stake, and loan approval functions
+     * Require KYC is also batched in for
+     */
+    modifier ensureNodeActive() {
+        if (msg.sender != bnplFactory && msg.sender != operator) {
+            require(
+                getBNPLBalance(operator) >= 1500000 * 10**18,
+                "Banking node is currently not active"
+            );
+            if (requireKYC) {
+                require(whitelistedAddresses[msg.sender]);
+            }
+        }
+        _;
+    }
+
+    /**
+     * For operator only functions
+     */
+    modifier operatorOnly() {
+        require(msg.sender == operator);
+        _;
+    }
+
     //STATE CHANGING FUNCTIONS
 
     /**
@@ -141,12 +168,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 collateralAmount,
         address agent,
         string memory message
-    ) external returns (uint256 requestId) {
-        //bank node must be active
-        require(
-            getBNPLBalance(operator) >= 1500000 * 10**18,
-            "Banking node is currently not active"
-        );
+    ) external ensureNodeActive returns (uint256 requestId) {
+        require(paymentInterval > 0);
         requestId = incrementor;
         incrementor++;
         pendingRequests.push(requestId);
@@ -168,13 +191,15 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (collateralAmount > 0) {
             //update the collateral owed (interest accrued on collateral is given to lend)
             collateralOwed[collateral] += collateralAmount;
-            //collect the collateral
-            IERC20 bond = IERC20(collateral);
-            bond.transferFrom(msg.sender, address(this), collateralAmount);
+            TransferHelper.safeTransferFrom(
+                collateral,
+                msg.sender,
+                address(this),
+                collateralAmount
+            );
             //deposit the collateral in AAVE to accrue interest
             _depositToLendingPool(collateral, collateralAmount);
         }
-
         //save the agent of the loan
         loanToAgent[requestId] = agent;
 
@@ -254,7 +279,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     function makeLoanPayment(uint256 loanId) external {
         //check the loan has outstanding payments
         require(
-            idToLoan[loanId].principalRemaining != 0,
+            idToLoan[loanId].principalRemaining > 0,
             "No payments are required for this loan"
         );
         uint256 paymentAmount = getNextPayment(loanId);
@@ -278,7 +303,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             }
         }
         //make payment
-        baseToken.transferFrom(msg.sender, address(this), paymentAmount);
+        TransferHelper.safeTransferFrom(
+            address(baseToken),
+            msg.sender,
+            address(this),
+            paymentAmount
+        );
         //deposit the tokens into AAVE on behalf of the pool contract, withholding 30% and the interest as baseToken
         uint256 interestWithheld = ((interestPortion * 3) / 10);
 
@@ -364,19 +394,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Deposit liquidity to the banking node
      */
-    function deposit(uint256 _amount) public {
-        //KYC requirement / whitelist check
-        if (requireKYC) {
-            require(
-                whitelistedAddresses[msg.sender],
-                "You must first complete the KYC process"
-            );
-        }
-        //bank node must be active
-        require(
-            getBNPLBalance(operator) >= 1500000 * 10**18,
-            "Banking node is currently not active"
-        );
+    function deposit(uint256 _amount) public ensureNodeActive {
         //check the decimals of the
         uint256 decimalAdjust = 1;
         if (baseToken.decimals() != 18) {
@@ -417,23 +435,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Stake BNPL into a node
      */
-    function stake(uint256 _amount) external {
+    function stake(uint256 _amount) external ensureNodeActive {
         //require a non-zero deposit
         require(_amount > 0, "Cannot deposit 0");
-        //KYC requirement / whitelist check
-        if (requireKYC) {
-            require(
-                whitelistedAddresses[msg.sender],
-                "Your address is has not completed KYC requirements"
-            );
-        }
-        //require bankingNode to be active (operator must have 2M BNPL staked)
-        if (msg.sender != bnplFactory && msg.sender != operator) {
-            require(
-                getBNPLBalance(operator) >= 1500000 * 10**18,
-                "Banking node is currently not active"
-            );
-        }
+
         address staker = msg.sender;
         //factory initial bond counted as operator
         if (msg.sender == bnplFactory) {
@@ -700,13 +705,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function approveLoan(uint256 loanId, uint256 requiredCollateralAmount)
         external
+        ensureNodeActive
+        operatorOnly
     {
-        require(msg.sender == operator);
-        //check node is active
-        require(
-            getBNPLBalance(operator) >= 1500000 * 10**18,
-            "Banking node is currently not active"
-        );
         //ensure the loan was never started
         require(idToLoan[loanId].loanStartTime == 0);
         //ensure the collateral is still posted
@@ -755,16 +756,17 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Used to reject all current pending loan requests
      */
-    function clearPendingLoans() external {
-        require(address(msg.sender) == operator);
+    function clearPendingLoans() external operatorOnly {
         pendingRequests = new uint256[](0);
     }
 
     /**
      * Whitelist a given list of addresses
      */
-    function whitelistAddresses(address whitelistAddition) external {
-        require(address(msg.sender) == operator);
+    function whitelistAddresses(address whitelistAddition)
+        external
+        operatorOnly
+    {
         whitelistedAddresses[whitelistAddition] = true;
     }
 

@@ -221,8 +221,9 @@ def test_banking_node_collateral_loan():
         and node.getTotalAssetValue() <= expected_total_asset_value
     )
 
-    # Check the loan time has expired
-    assert node.getNextDueDate(loan_id_slashing) > time.time()
+    # Check the loan time has expired and is ready to be slashed
+    assert node.getNextDueDate(loan_id_slashing) < time.time()
+    assert node.gracePeriod() == 0
 
     # Slash the collateral now that >1 s passed, and no grace period
     tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
@@ -241,7 +242,12 @@ def test_banking_node_collateral_loan():
 
     # $50 slashed of $200 total, should be 25% of staked balance slashed
     expected_staking_balance = BOND_AMOUNT * 0.75
+    expected_slashing_balance = BOND_AMOUNT * 0.25
     assert (
         node.getBNPLBalance(account) >= expected_staking_balance * 0.99
         and node.getBNPLBalance(account) <= expected_staking_balance * 1.01
+    )
+    assert (
+        node.slashingBalance() >= expected_slashing_balance * 0.99
+        and node.slashingBalance() <= expected_slashing_balance * 1.01
     )
