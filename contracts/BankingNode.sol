@@ -59,6 +59,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 paymentsMade;
         address collateral;
         uint256 collateralAmount;
+        bool isSlashed;
     }
 
     //EVENTS
@@ -150,9 +151,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         ERC20 aToken = ERC20(
             lendingPool.getReserveData(address(baseToken)).aTokenAddress
         );
+        require(ERC20(baseToken).decimals() == aToken.decimals());
         uniswapFactory = _uniswapFactory;
         treasury = address(0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29);
-        require(ERC20(baseToken).decimals() == aToken.decimals());
     }
 
     /**
@@ -184,7 +185,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             0, //initalize principalRemaining to 0
             0, //intialize paymentsMade to 0
             collateral,
-            collateralAmount
+            collateralAmount,
+            false
         );
 
         //post the collateral if any
@@ -528,11 +530,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         require(block.timestamp > getNextDueDate(loanId) + gracePeriod);
         //check that the loan has remaining payments
         require(idToLoan[loanId].principalRemaining != 0);
+        //check loan is not slashed already
+        require(!idToLoan[loanId].isSlashed);
         //get slash % with 10,000 multiplier
         uint256 slashPercent = (10000 * idToLoan[loanId].principalRemaining) /
             getTotalAssetValue();
         uint256 unbondingSlash = (unbondingAmount * slashPercent) / 10000;
-
         uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 10000;
         //slash both staked and bonded balances
         accountsReceiveable -= idToLoan[loanId].principalRemaining;

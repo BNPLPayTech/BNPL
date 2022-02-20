@@ -23,6 +23,10 @@ COLLAT_AMOUNT = 100 * 10**18  # 100 BUSD
 BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6  # 100 USDT
 
+"""
+
+"""
+
 
 def test_banking_node_collateral_loan():
 
@@ -226,19 +230,24 @@ def test_banking_node_collateral_loan():
         and node.getTotalAssetValue() <= expected_total_asset_value
     )
 
-    # Check the loan time has expired and is ready to be slashed
-    assert node.getNextDueDate(loan_id_slashing) < time.time()
-    assert node.gracePeriod() == 0
-
     # Ensure we can not unbond as 7 days has not passed
     with pytest.raises(Exception):
         node.unstake({"from": account})
 
-    # Slash the collateral now that >1 s passed, and no grace period
-    tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
-
     # Deploy liquidity on Uniswap for BNPL/ETH
     add_lp(bnpl)
+
+    # Check the loan time has expired and is ready to be slashed
+    assert node.getNextDueDate(loan_id_slashing) < time.time()
+    assert node.gracePeriod() == 0
+
+    # Slash the collateral now that >1 s passed, and no grace period
+    tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
+    tx.wait(1)
+
+    # Check we can not slash again
+    with pytest.raises(Exception):
+        tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
 
     # Check on pools in assets,
     expected_accounts_receiveable = USDT_AMOUNT / 2
@@ -272,14 +281,37 @@ def test_banking_node_collateral_loan():
     assert node.unbondingShares(account) == BOND_AMOUNT / 2
 
     # Sell the slashed balance
+    initial_usd_balance = node.getTotalAssetValue()
+
     tx = node.sellSlashed(0, {"from": account})
     tx.wait(1)
 
     # Check on balances change
-    initial_usd_balance = node.getTotalAssetValue()
+
     assert node.slashingBalance() == 0
     assert node.getTotalAssetValue() > initial_usd_balance
     assert (
         node.getBNPLBalance(account) >= expected_staking_balance * 0.99
         and node.getBNPLBalance(account) <= expected_staking_balance * 1.01
     )
+
+    initial_usd_balance = node.getTotalAssetValue()
+
+    # Slash loan with collateral
+    tx = node.slashLoan(loan_id_collateral, 0, {"from": account})
+    tx.wait(1)
+
+    # Check the collateral was sold for usdt and other balances
+    assert node.getTotalAssetValue() > initial_usd_balance
+    assert node.collateralOwed(busd_address) == 0
+    assert node.slashingBalance() > 0
+
+    # Ensure collateral can no longer be withdrawn
+    with pytest.raises(Exception):
+        node.withdrawCollateral(loan_id_collateral, {"from": account2})
+
+    # Check that there was a small amount of interest earnt on the collateral
+    initial_staked_bnpl = node.getBNPLBalance(account)
+    tx = node.collectCollateralFees(busd_address, {"from": account})
+    tx.wait(1)
+    assert node.getBNPLBalance(account) > initial_staked_bnpl
