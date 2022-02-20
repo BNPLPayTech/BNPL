@@ -21,7 +21,7 @@ from web3 import Web3
 
 BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6  # 100 USDT
-COLLAT_AMOUNT = 10**18
+
 
 
 def test_banking_node_regular_loan():
@@ -264,6 +264,7 @@ def test_banking_node_regular_loan():
     # Test collecting fees
     initial_operator_bnpl = node.getBNPLBalance(account)
     initial_operator_usdt = usdt.balanceOf(account)
+
     tx = node.collectFees({"from": account})
     tx.wait(1)
 
@@ -271,82 +272,3 @@ def test_banking_node_regular_loan():
     assert node.getBNPLBalance(account) > initial_operator_bnpl
     assert usdt.balanceOf(account) > initial_operator_usdt
     assert usdt.balanceOf(node_address) == 0
-
-    # Test on a slashing loan + collateral loan at same time
-    # 1 second interval to allow slashing
-    payment_interval = 1
-
-    # check that collateral loan fails if collateral can not be deposited into aave
-    approve_erc20(COLLAT_AMOUNT, node_address, bnpl, account2)
-
-    with pytest.raises(Exception):
-        tx = node.requestLoan(
-            USDT_AMOUNT,
-            payment_interval,
-            12,
-            1000,
-            False,
-            bnpl,
-            COLLAT_AMOUNT,
-            account,
-            "collateral loan",
-            {"from": account2},
-        )
-
-    # Collateral Loan with BUSD as collateral
-
-    busd_address = config["networks"][network.show_active()]["busd"]
-    busd = interface.IERC20(usdt_address)
-    initial_busd_balance = busd.balanceOf(account2)
-
-    approve_erc20(COLLAT_AMOUNT, node_address, busd_address, account2)
-
-    tx = node.requestLoan(
-        USDT_AMOUNT / 2,
-        payment_interval,
-        12,
-        1000,
-        False,
-        busd_address,
-        COLLAT_AMOUNT,
-        account,
-        "collateral loan",
-        {"from": account2},
-    )
-    tx.wait(1)
-
-    # Check loan was approved and collateral posted
-    assert node.getPendingRequestCount() == 1
-    assert busd.balanceOf(account2) < initial_busd_balance
-    assert node.collateralOwed(busd_address) == COLLAT_AMOUNT
-
-    loan_id_collateral = node.pendingRequests(0)
-
-    # Request a second loan with no collateral
-
-    tx = node.requestLoan(
-        USDT_AMOUNT / 2,
-        payment_interval,
-        12,
-        1000,
-        False,
-        "0x0000000000000000000000000000000000000000",
-        0,
-        account,
-        "slashing loan",
-        {"from": account2},
-    )
-    tx.wait(1)
-
-    assert node.getPendingRequestCount() == 2
-
-    loan_id_slashing = node.pendingRequests(1)
-
-    # Test Clear pending loans
-    node.clearPendingLoans({"from"})
-    assert node.getPendingRequestCount() == 0
-
-    # Check collateral can be withdrawn
-    node.withdrawCollateral(loan_id_collateral)
-    assert busd.balanceOf(account2) == initial_busd_balance
-    assert node.collateralOwed(busd_address) < COLLAT_AMOUNT * 0.01

@@ -35,7 +35,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     uint256 public accountsReceiveable;
     mapping(address => bool) public whitelistedAddresses;
     mapping(address => uint256) public stakingShares;
-    mapping(address => uint256) public lastStakeTime;
+    mapping(address => uint256) public unbondTime;
     mapping(address => uint256) public unbondingShares;
     mapping(uint256 => address) public loanToAgent;
 
@@ -77,6 +77,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     event baseTokensDonated(uint256 amount);
     event aaveRewardsCollected(uint256 amount);
     event slashingSale(uint256 bnplSold, uint256 baseTokenRecovered);
+    event bnplStaked(uint256 bnplWithdrawn);
+    event unbondingInitiated(uint256 unbondAmount);
+    event bnplWithdrawn(uint256 bnplWithdrawn);
 
     constructor() {
         bnplFactory = msg.sender;
@@ -186,12 +189,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         require(msg.sender == idToLoan[loanId].borrower);
         require(idToLoan[loanId].principalRemaining == 0);
 
-        ILendingPool lendingPool = _getLendingPool();
-        lendingPool.withdraw(
+        _withdrawFromLendingPool(
             idToLoan[loanId].collateral,
             idToLoan[loanId].collateralAmount,
             idToLoan[loanId].borrower
         );
+
         //update the amounts
         collateralOwed[idToLoan[loanId].collateral] -= idToLoan[loanId]
             .collateralAmount;
@@ -406,10 +409,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     function withdraw(uint256 _amount) external {
         uint256 what = (_amount * totalSupply()) / getTotalAssetValue();
         _burn(msg.sender, what);
-        //get the latest lending pool address;
-        ILendingPool lendingPool = _getLendingPool();
-        //withdraw the tokens to the user
-        lendingPool.withdraw(address(baseToken), _amount, msg.sender);
+        _withdrawFromLendingPool(address(baseToken), _amount, msg.sender);
 
         emit baseTokenWithdrawn(msg.sender, _amount);
     }
@@ -439,8 +439,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (msg.sender == bnplFactory) {
             staker = operator;
         }
-        //set the time of the stake
-        lastStakeTime[staker] = block.timestamp;
+
         //calcualte the number of shares to give
         uint256 what = 0;
         if (totalStakingShares == 0) {
@@ -462,6 +461,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //issue the shares
         stakingShares[staker] += what;
         totalStakingShares += what;
+
+        emit bnplStaked(_amount);
     }
 
     /**
@@ -483,6 +484,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             stakingShares[msg.sender] >= _amount,
             "You do not have a large enough balance"
         );
+        //set the time of the unbond
+        unbondTime[msg.sender] = block.timestamp;
         //get the amount of BNPL to issue back
         uint256 what = (_amount *
             (BNPL.balanceOf(address(this)) -
@@ -503,20 +506,25 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         unbondingShares[msg.sender] += newUnbondingShares;
         totalUnbondingShares += newUnbondingShares;
         unbondingAmount += what;
+
+        emit unbondingInitiated(_amount);
     }
 
     /**
      * Withdraw BNPL from a bond once unbond period ends
      */
     function unstake() external {
-        //require a 45,000 block gap (~7 day) gap since the last deposit
-        require(block.timestamp >= lastStakeTime[msg.sender] + 45000);
-        uint256 what = unbondingShares[msg.sender];
+        //require a 45,000 block gap (~7 day) gap since unbond initiated
+        require(block.timestamp >= unbondTime[msg.sender] + 45000);
+        uint256 what = (unbondingShares[msg.sender] * unbondingAmount) /
+            totalUnbondingShares;
         //transfer the tokens to user
         BNPL.transfer(msg.sender, what);
         //update the balances
         unbondingShares[msg.sender] = 0;
         unbondingAmount -= what;
+
+        emit bnplWithdrawn(what);
     }
 
     /**
@@ -601,7 +609,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Withdraw token from AAVE lending pool
      */
-    function _withdrawFromLendingPoo(
+    function _withdrawFromLendingPool(
         address tokenOut,
         uint256 amountOut,
         address to
@@ -701,7 +709,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //ensure the loan was never started
         require(idToLoan[loanId].loanStartTime == 0);
         //ensure the collateral is still posted
-        require(idToLoan[loanId].collateralAmount == requiredCollateralAmount);
+        require(idToLoan[loanId].collateralAmount >= requiredCollateralAmount);
 
         //remove from loanRequests and add loan to current loans
         for (uint256 i = 0; i < pendingRequests.length; i++) {
