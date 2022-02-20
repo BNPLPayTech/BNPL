@@ -554,6 +554,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         defaultedLoans.push(loanId);
         //sell collateral if any
         if (idToLoan[loanId].collateralAmount != 0) {
+            _withdrawFromLendingPool(
+                idToLoan[loanId].collateral,
+                idToLoan[loanId].collateralAmount,
+                address(this)
+            );
             _swapToken(
                 idToLoan[loanId].collateral,
                 baseToken,
