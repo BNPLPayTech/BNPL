@@ -161,15 +161,3 @@ def test_banking_node_early_repayment():
         usdt.balanceOf(node_address) >= expected_interest_withheld * 0.99
         and usdt.balanceOf(node_address) <= expected_interest_withheld * 1.01
     )
-
-    # Test collecting fees
-    initial_operator_bnpl = node.getBNPLBalance(account)
-    initial_operator_usdt = usdt.balanceOf(account)
-
-    tx = node.collectFees({"from": account})
-    tx.wait(1)
-
-    # Check rewards were distributed
-    assert node.getBNPLBalance(account) > initial_operator_bnpl
-    assert usdt.balanceOf(account) > initial_operator_usdt
-    assert usdt.balanceOf(node_address) == 0
