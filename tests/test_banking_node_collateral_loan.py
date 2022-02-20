@@ -245,6 +245,10 @@ def test_banking_node_collateral_loan():
     tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
     tx.wait(1)
 
+    # Check we can not slash again
+    with pytest.raises(Exception):
+        tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
+
     # Check on pools in assets,
     expected_accounts_receiveable = USDT_AMOUNT / 2
     expected_asset_value = USDT_AMOUNT * 1.5
@@ -275,10 +279,6 @@ def test_banking_node_collateral_loan():
     )
     assert node.totalUnbondingShares() == BOND_AMOUNT / 2
     assert node.unbondingShares(account) == BOND_AMOUNT / 2
-
-    # Check we can not slash again
-    with pytest.raises(Exception):
-        tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
 
     # Sell the slashed balance
     initial_usd_balance = node.getTotalAssetValue()

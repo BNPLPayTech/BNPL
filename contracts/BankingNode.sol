@@ -170,7 +170,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         address agent,
         string memory message
     ) external ensureNodeActive returns (uint256 requestId) {
-        require(paymentInterval > 0);
+        require(paymentInterval > 0, "Invalid Payment Interval");
         requestId = incrementor;
         incrementor++;
         pendingRequests.push(requestId);
@@ -252,7 +252,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             assets,
             address(this)
         );
-        require(rewardAmount > 0);
+        require(rewardAmount > 0, "No rewards to withdraw");
         uint256 rewards = aaveRewardController.claimRewards(
             assets,
             rewardAmount,
@@ -550,7 +550,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         slashingBalance += unbondingSlash + stakingSlash;
         unbondingAmount -= unbondingSlash;
         stakingSlash -= stakingSlash;
-        idToLoan[loanId].isSlashed == true;
+        idToLoan[loanId].isSlashed = true;
         defaultedLoans.push(loanId);
         //sell collateral if any
         if (idToLoan[loanId].collateralAmount != 0) {
