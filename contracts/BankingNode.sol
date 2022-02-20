@@ -539,7 +539,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //check that the loan has remaining payments
         require(idToLoan[loanId].principalRemaining != 0);
         //check loan is not slashed already
-        require(!idToLoan[loanId].isSlashed);
+        require(idToLoan[loanId].isSlashed == false);
         //get slash % with 10,000 multiplier
         uint256 slashPercent = (10000 * idToLoan[loanId].principalRemaining) /
             getTotalAssetValue();
@@ -902,5 +902,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function getCurrentLoansCount() external view returns (uint256) {
         return currentLoans.length;
+    }
+
+    /**
+     * Get the current number of defaulted loans
+     */
+    function getCurrentLoansCount() external view returns (uint256) {
+        return defaultedLoans.length;
     }
 }
