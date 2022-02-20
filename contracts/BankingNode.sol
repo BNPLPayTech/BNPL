@@ -53,7 +53,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 loanStartTime; //unix timestamp of start
         uint256 loanAmount;
         uint256 paymentInterval; //unix interval of payment (e.g. monthly = 2,628,000)
-        uint256 interestRate; //interest rate * 10000, e.g., 10%: 0.1 * 10000 = 1000
+        uint256 interestRate; //interest rate per peiod * 10000, e.g., 10% on a 12 month loan = : 0.1 * 10000 / 12 = 83
         uint256 numberOfPayments;
         uint256 principalRemaining;
         uint256 paymentsMade;
@@ -180,7 +180,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             0,
             loanAmount,
             paymentInterval, //interval of payments (e.g. Monthly)
-            interestRate, //annualized interest rate
+            interestRate, //annualized interest rate per period * 10000 (e.g. 12 month loan 10% = 83)
             numberOfPayments,
             0, //initalize principalRemaining to 0
             0, //intialize paymentsMade to 0
@@ -285,8 +285,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             "No payments are required for this loan"
         );
         uint256 paymentAmount = getNextPayment(loanId);
-        uint256 interestRatePerPeriod = (idToLoan[loanId].interestRate *
-            idToLoan[loanId].paymentInterval) / 31536000;
+        uint256 interestRatePerPeriod = idToLoan[loanId].interestRate;
         uint256 interestPortion = (idToLoan[loanId].principalRemaining *
             interestRatePerPeriod) / 10000;
         //reduce accounts receiveable and loan principal if principal + interest payment
@@ -335,8 +334,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             idToLoan[loanId].principalRemaining != 0,
             "No payments are required for this loan"
         );
-        uint256 interestRatePerPeriod = (idToLoan[loanId].interestRate *
-            idToLoan[loanId].paymentInterval) / 31536000;
+        uint256 interestRatePerPeriod = idToLoan[loanId].interestRate;
         //make a payment of remaining principal + 1 period of interest
         uint256 interestAmount = (idToLoan[loanId].principalRemaining *
             (interestRatePerPeriod)) / 10000;
@@ -542,6 +540,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         slashingBalance += unbondingSlash + stakingSlash;
         unbondingAmount -= unbondingSlash;
         stakingSlash -= stakingSlash;
+        idToLoan[loanId].isSlashed == true;
         defaultedLoans.push(loanId);
         //sell collateral if any
         if (idToLoan[loanId].collateralAmount != 0) {
@@ -817,8 +816,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             return 0;
         }
         // interest rate per period (31536000 seconds in a year)
-        uint256 interestRatePerPeriod = (idToLoan[loanId].interestRate *
-            idToLoan[loanId].paymentInterval) / 31536000;
+        uint256 interestRatePerPeriod = idToLoan[loanId].interestRate;
         //check if it is an interest only loan
         if (idToLoan[loanId].interestOnly) {
             //check if its the final payment

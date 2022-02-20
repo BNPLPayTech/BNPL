@@ -22,6 +22,9 @@ from web3 import Web3
 BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6  # 100 USDT
 
+"""
+"""
+
 
 def test_banking_node_regular_loan():
 
@@ -142,7 +145,7 @@ def test_banking_node_regular_loan():
         USDT_AMOUNT,
         payment_interval,
         12,
-        1000,
+        83,
         False,
         "0x0000000000000000000000000000000000000000",
         0,
