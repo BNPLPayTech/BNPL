@@ -55,6 +55,11 @@ def test_banking_node_collateral_loan():
     # Check that 2M BNPL was bonded
     assert node.getBNPLBalance(account) == BOND_AMOUNT
 
+    # Unbond and redeposit for future unbonding checks
+    node.initiateUnstake(BOND_AMOUNT / 2, {"from": account})
+    approve_erc20(BOND_AMOUNT / 2, node_address, bnpl, account)
+    node.stake(BOND_AMOUNT / 2, {"from": account})
+
     # Test on a slashing loan + collateral loan at same time
     # 1 second interval to allow slashing
     payment_interval = 1
@@ -225,6 +230,10 @@ def test_banking_node_collateral_loan():
     assert node.getNextDueDate(loan_id_slashing) < time.time()
     assert node.gracePeriod() == 0
 
+    # Ensure we can not unbond as 7 days has not passed
+    with pytest.raises(Exception):
+        node.unstake({"from": account})
+
     # Slash the collateral now that >1 s passed, and no grace period
     tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
 
@@ -242,7 +251,8 @@ def test_banking_node_collateral_loan():
 
     # $50 slashed of $200 total, should be 25% of staked balance slashed
     expected_staking_balance = BOND_AMOUNT * 0.75
-    expected_slashing_balance = BOND_AMOUNT * 0.25
+    expected_slashing_balance = BOND_AMOUNT * 1.5 * 0.25
+    expected_unbonding_amount = BOND_AMOUNT / 2 * 0.75
     assert (
         node.getBNPLBalance(account) >= expected_staking_balance * 0.99
         and node.getBNPLBalance(account) <= expected_staking_balance * 1.01
@@ -250,4 +260,25 @@ def test_banking_node_collateral_loan():
     assert (
         node.slashingBalance() >= expected_slashing_balance * 0.99
         and node.slashingBalance() <= expected_slashing_balance * 1.01
+    )
+    assert (
+        node.unbondingAmount() >= expected_unbonding_amount * 0.99
+        and node.unbondingAmount() <= expected_unbonding_amount * 1.01
+    )
+    assert node.totalUnbondingShares() == BOND_AMOUNT / 2
+    assert node.unbondingShares(account) == BOND_AMOUNT / 2
+
+    # Deploy liquidity on Uniswap for BNPL/ETH
+    add_lp(bnpl)
+
+    # Sell the slashed balance
+    node.sellSlashed(0, {"from": account})
+
+    # Check on balances change
+    initial_usd_balance = node.getTotalAssetValue()
+    assert node.slashingBalance() == 0
+    assert node.getTotalAssetValue() > initial_usd_balance
+    assert (
+        node.getBNPLBalance(account) >= expected_staking_balance * 0.99
+        and node.getBNPLBalance(account) <= expected_staking_balance * 1.01
     )

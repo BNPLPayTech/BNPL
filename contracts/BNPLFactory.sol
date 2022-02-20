@@ -10,7 +10,7 @@ import "./libraries/TransferHelper.sol";
 contract BNPLFactory is Ownable {
     mapping(address => address) operatorToNode;
     address[] public bankingNodesList;
-    IERC20 public immutable BNPL;
+    address public immutable BNPL;
     address public immutable lendingPoolAddressesProvider;
     address public immutable WETH;
     address public immutable uniswapFactory;
@@ -19,7 +19,7 @@ contract BNPLFactory is Ownable {
 
     //Constuctor
     constructor(
-        IERC20 _BNPL,
+        address _BNPL,
         address _lendingPoolAddressesProvider,
         address _WETH,
         address _aaveDistributionController,
@@ -38,14 +38,19 @@ contract BNPLFactory is Ownable {
      * Creates a new banking node
      */
     function createNewNode(
-        IERC20 _baseToken,
+        address _baseToken,
         bool _requireKYC,
         uint256 _gracePeriod
     ) external returns (address node) {
-        //collect the BNPL
-        BNPL.transferFrom(msg.sender, address(this), 2000000 * 10**18);
+        //collect the 2M BNPL
+        TransferHelper.safeTransferFrom(
+            BNPL,
+            msg.sender,
+            address(this),
+            2000000 * 10**18
+        );
         //require base token to be approve
-        require(approvedBaseTokens[address(_baseToken)]);
+        require(approvedBaseTokens[_baseToken]);
         //create a new node
         bytes memory bytecode = type(BankingNode).creationCode;
         bytes32 salt = keccak256(
@@ -56,7 +61,7 @@ contract BNPLFactory is Ownable {
         }
 
         BankingNode(node).initialize(
-            address(_baseToken),
+            _baseToken,
             BNPL,
             _requireKYC,
             msg.sender,
@@ -66,7 +71,7 @@ contract BNPLFactory is Ownable {
             aaveDistributionController,
             uniswapFactory
         );
-        BNPL.approve(node, 2000000 * 10**18);
+        TransferHelper.safeApprove(BNPL, node, 2000000 * 10**18);
         BankingNode(node).stake(2000000 * 10**18);
         bankingNodesList.push(msg.sender);
         operatorToNode[msg.sender] = node;

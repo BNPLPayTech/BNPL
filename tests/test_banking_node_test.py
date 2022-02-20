@@ -23,7 +23,6 @@ BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6  # 100 USDT
 
 
-
 def test_banking_node_regular_loan():
 
     account = get_account()
@@ -201,7 +200,7 @@ def test_banking_node_regular_loan():
 
     # Ensure it can not be slashed
     with pytest.raises(Exception):
-        tx = node.slashLoan(loan_id)
+        tx = node.slashLoan(loan_id, 0, {"from": account})
 
     # Check on new loan details
     expected_interest_paid = USDT_AMOUNT * 0.1 / 12 * 0.7
@@ -232,7 +231,7 @@ def test_banking_node_regular_loan():
 
     # Ensure loan can not be slashed
     with pytest.raises(Exception):
-        node.slashLoan(loan_id, {"from": account})
+        node.slashLoan(loan_id, 0, {"from": account})
 
     # Make the remaining 11 payments
     for x in range(11):
