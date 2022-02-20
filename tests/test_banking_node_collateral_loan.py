@@ -221,6 +221,9 @@ def test_banking_node_collateral_loan():
         and node.getTotalAssetValue() <= expected_total_asset_value
     )
 
+    # Check the loan time has expired
+    assert node.getNextDueDate(loan_id_slashing) > time.time()
+
     # Slash the collateral now that >1 s passed, and no grace period
     tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
 

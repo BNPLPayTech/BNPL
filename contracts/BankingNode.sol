@@ -546,6 +546,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             slashingBalance -
             unbondingAmount) * slashPercent) / 10000;
         //slash both staked and bonded balances
+        accountsReceiveable -= idToLoan[loanId].principalRemaining;
         slashingBalance += unbondingSlash + stakingSlash;
         unbondingAmount -= unbondingSlash;
         stakingSlash -= stakingSlash;
