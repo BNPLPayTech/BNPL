@@ -532,9 +532,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 slashPercent = (10000 * idToLoan[loanId].principalRemaining) /
             getTotalAssetValue();
         uint256 unbondingSlash = (unbondingAmount * slashPercent) / 10000;
-        uint256 stakingSlash = ((ERC20(BNPL).balanceOf(address(this)) -
-            slashingBalance -
-            unbondingAmount) * slashPercent) / 10000;
+
+        uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 10000;
         //slash both staked and bonded balances
         accountsReceiveable -= idToLoan[loanId].principalRemaining;
         slashingBalance += unbondingSlash + stakingSlash;
@@ -564,7 +563,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         require(slashingBalance > 0);
         //As BNPL-ETH Pair is the most liquid, goes BNPL > ETH > baseToken
         uint256 baseTokenOut = _swapToken(
-            address(BNPL),
+            BNPL,
             baseToken,
             minOut,
             slashingBalance
@@ -590,6 +589,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         );
         //add donation to AAVE
         _depositToLendingPool(baseToken, _amount);
+
         emit baseTokensDonated(_amount);
     }
 

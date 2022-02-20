@@ -237,6 +237,9 @@ def test_banking_node_collateral_loan():
     # Slash the collateral now that >1 s passed, and no grace period
     tx = node.slashLoan(loan_id_slashing, 0, {"from": account})
 
+    # Deploy liquidity on Uniswap for BNPL/ETH
+    add_lp(bnpl)
+
     # Check on pools in assets,
     expected_accounts_receiveable = USDT_AMOUNT / 2
     expected_asset_value = USDT_AMOUNT * 1.5
@@ -268,11 +271,9 @@ def test_banking_node_collateral_loan():
     assert node.totalUnbondingShares() == BOND_AMOUNT / 2
     assert node.unbondingShares(account) == BOND_AMOUNT / 2
 
-    # Deploy liquidity on Uniswap for BNPL/ETH
-    add_lp(bnpl)
-
     # Sell the slashed balance
-    node.sellSlashed(0, {"from": account})
+    tx = node.sellSlashed(0, {"from": account})
+    tx.wait(1)
 
     # Check on balances change
     initial_usd_balance = node.getTotalAssetValue()
