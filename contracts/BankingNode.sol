@@ -213,8 +213,18 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function withdrawCollateral(uint256 loanId) public {
         //must be the borrower or operator to withdraw, and loan must be either paid/not initiated
-        require(msg.sender == idToLoan[loanId].borrower);
-        require(idToLoan[loanId].principalRemaining == 0);
+        require(
+            msg.sender == idToLoan[loanId].borrower,
+            "Invalid user for loanId"
+        );
+        require(
+            idToLoan[loanId].principalRemaining == 0,
+            "Loan is still ongoing"
+        );
+        require(
+            idToLoan[loanId].collateralAmount != 0,
+            "No collateral to withdraw"
+        );
 
         _withdrawFromLendingPool(
             idToLoan[loanId].collateral,
