@@ -208,6 +208,7 @@ def test_banking_node_regular_loan():
     # Check on new loan details
     expected_interest_paid = USDT_AMOUNT * 0.1 / 12 * 0.7
     expected_principal_portion = expected_payment - expected_interest_paid
+
     assert (
         node.getTotalAssetValue() >= USDT_AMOUNT * 1.99 + expected_interest_paid
         and node.getTotalAssetValue() < USDT_AMOUNT * 2.01 + expected_interest_paid
@@ -266,11 +267,3 @@ def test_banking_node_regular_loan():
     # Test collecting fees
     initial_operator_bnpl = node.getBNPLBalance(account)
     initial_operator_usdt = usdt.balanceOf(account)
-
-    tx = node.collectFees({"from": account})
-    tx.wait(1)
-
-    # Check rewards were distributed
-    assert node.getBNPLBalance(account) > initial_operator_bnpl
-    assert usdt.balanceOf(account) > initial_operator_usdt
-    assert usdt.balanceOf(node_address) == 0

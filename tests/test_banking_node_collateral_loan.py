@@ -324,3 +324,6 @@ def test_banking_node_collateral_loan():
     tx = node.collectCollateralFees(busd_address, {"from": account})
     tx.wait(1)
     assert node.getBNPLBalance(account) > initial_staked_bnpl
+    assert node.getDefaultedLoansCount() == 2
+    assert node.getCurrentLoansCount() == 0
+    assert node.getPendingRequestCount() == 0

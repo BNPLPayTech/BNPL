@@ -107,6 +107,17 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
+     * Ensure that the loan has principal to be paid
+     */
+    modifier ensurePrincipalRemaining() {
+        require(
+            idToLoan[loanId].principalRemaining > 0,
+            "No payments are required for this loan"
+        );
+        _;
+    }
+
+    /**
      * For operator only functions
      */
     modifier operatorOnly() {
@@ -212,7 +223,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Withdraw the collateral from a loan
      */
-    function withdrawCollateral(uint256 loanId) public {
+    function withdrawCollateral(uint256 loanId) external {
         //must be the borrower or operator to withdraw, and loan must be either paid/not initiated
         require(
             msg.sender == idToLoan[loanId].borrower,
@@ -289,16 +300,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /*
      * Make a loan payment
      */
-    function makeLoanPayment(uint256 loanId) external {
-        //check the loan has outstanding payments
-        require(
-            idToLoan[loanId].principalRemaining > 0,
-            "No payments are required for this loan"
-        );
+    function makeLoanPayment(uint256 loanId) external ensurePrincipalRemaining {
         uint256 paymentAmount = getNextPayment(loanId);
-        uint256 interestRatePerPeriod = idToLoan[loanId].interestRate;
         uint256 interestPortion = (idToLoan[loanId].principalRemaining *
-            interestRatePerPeriod) / 10000;
+            idToLoan[loanId].interestRate) / 10000;
         //reduce accounts receiveable and loan principal if principal + interest payment
         if (!idToLoan[loanId].interestOnly) {
             uint256 principalPortion = paymentAmount - interestPortion;
@@ -339,18 +344,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Repay remaining balance to save on interest cost
      * Payment amount is remaining principal + 1 period of interest
      */
-    function repayEarly(uint256 loanId) external {
-        //check the loan has outstanding payments
-        require(
-            idToLoan[loanId].principalRemaining != 0,
-            "No payments are required for this loan"
-        );
-        uint256 interestRatePerPeriod = idToLoan[loanId].interestRate;
+    function repayEarly(uint256 loanId) external ensurePrincipalRemaining {
         //make a payment of remaining principal + 1 period of interest
         uint256 interestAmount = (idToLoan[loanId].principalRemaining *
-            interestRatePerPeriod) / 10000;
-        uint256 paymentAmount = (idToLoan[loanId].principalRemaining +
-            interestAmount);
+            idToLoan[loanId].interestRate) / 10000;
+        uint256 paymentAmount = idToLoan[loanId].principalRemaining +
+            interestAmount;
         //make payment
         TransferHelper.safeTransferFrom(
             baseToken,
@@ -358,7 +357,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             address(this),
             paymentAmount
         );
-        uint256 interestWithheld = ((interestAmount * 3) / 10);
+        uint256 interestWithheld = (interestAmount * 3) / 10;
         _depositToLendingPool(baseToken, paymentAmount - interestWithheld);
 
         //update accounts
@@ -537,16 +536,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Move BNPL to a slashing balance, to be market sold in seperate function to prevent minOut failure
      * minOut used for slashing sale, if no collateral, put 0
      */
-    function slashLoan(uint256 loanId, uint256 minOut) external {
+    function slashLoan(uint256 loanId, uint256 minOut)
+        external
+        ensurePrincipalRemaining
+    {
         //require that the given due date and grace period have expired
         require(
             block.timestamp > getNextDueDate(loanId) + gracePeriod,
             "Time period is not yet expired"
-        );
-        //check that the loan has remaining payments
-        require(
-            idToLoan[loanId].principalRemaining != 0,
-            "There is no balance remaining"
         );
         //check loan is not slashed already
         require(!idToLoan[loanId].isSlashed, "Loan has already been slashed");

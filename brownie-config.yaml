@@ -15,6 +15,7 @@ networks:
     verify: false
     router: ''
     aaveDistributionController: '0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5'
+    treasury: '0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29'
   kovan:
     verify: false
     lendingPoolAddressesProvider: '0x88757f2f99175387aB4C6a4b3067c77A695b0349'
@@ -24,6 +25,7 @@ networks:
     aaveDistributionController: '0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5'
     weth: '0xd0A1E359811322d97991E03f863a0C30C2cF029C'
     factory: '0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f'
+    treasury: '0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29'
 wallets:
   key1: ${PRIVATE_KEY1}
   key2: ${PRIVATE_KEY2}
