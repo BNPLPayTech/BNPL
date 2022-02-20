@@ -907,7 +907,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Get the current number of defaulted loans
      */
-    function getCurrentLoansCount() external view returns (uint256) {
+    function getDefaultedLoansCount() external view returns (uint256) {
         return defaultedLoans.length;
     }
 }
