@@ -297,12 +297,21 @@ def test_banking_node_collateral_loan():
 
     initial_usd_balance = node.getTotalAssetValue()
 
+    # Ensure loan is slashable
+    assert node.getNextDueDate(loan_id_collateral) < time.time()
+
     # Slash loan with collateral
     tx = node.slashLoan(loan_id_collateral, 0, {"from": account})
     tx.wait(1)
 
+    # Check can not slash again
+    with pytest.raises(Exception):
+        tx = node.slashLoan(loan_id_collateral, 0, {"from": account})
+
     # Check the collateral was sold for usdt and other balances
-    assert node.getTotalAssetValue() > initial_usd_balance
+    accounts_receiveable_lost = USDT_AMOUNT / 2
+
+    assert node.getTotalAssetValue() > initial_usd_balance - accounts_receiveable_lost
     assert node.collateralOwed(busd_address) == 0
     assert node.slashingBalance() > 0
 

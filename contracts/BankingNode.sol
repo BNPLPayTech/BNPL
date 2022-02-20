@@ -77,6 +77,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     event feesCollected(uint256 operatorFees, uint256 stakerFees);
     event baseTokensDonated(uint256 amount);
     event aaveRewardsCollected(uint256 amount);
+    event loanSlashed(uint256 loanId);
     event slashingSale(uint256 bnplSold, uint256 baseTokenRecovered);
     event bnplStaked(uint256 bnplWithdrawn);
     event unbondingInitiated(uint256 unbondAmount);
@@ -347,7 +348,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 interestRatePerPeriod = idToLoan[loanId].interestRate;
         //make a payment of remaining principal + 1 period of interest
         uint256 interestAmount = (idToLoan[loanId].principalRemaining *
-            (interestRatePerPeriod)) / 10000;
+            interestRatePerPeriod) / 10000;
         uint256 paymentAmount = (idToLoan[loanId].principalRemaining +
             interestAmount);
         //make payment
@@ -515,7 +516,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function unstake() external {
         //require a 45,000 block gap (~7 day) gap since unbond initiated
-        require(block.timestamp >= unbondTime[msg.sender] + 45000);
+        require(
+            block.timestamp >= unbondTime[msg.sender] + 45000,
+            "Unbond period not yet finished"
+        );
         uint256 what = (unbondingShares[msg.sender] * unbondingAmount) /
             totalUnbondingShares;
         //transfer the tokens to user
@@ -535,11 +539,17 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function slashLoan(uint256 loanId, uint256 minOut) external {
         //require that the given due date and grace period have expired
-        require(block.timestamp > getNextDueDate(loanId) + gracePeriod);
+        require(
+            block.timestamp > getNextDueDate(loanId) + gracePeriod,
+            "Time period is not yet expired"
+        );
         //check that the loan has remaining payments
-        require(idToLoan[loanId].principalRemaining != 0);
+        require(
+            idToLoan[loanId].principalRemaining != 0,
+            "There is no balance remaining"
+        );
         //check loan is not slashed already
-        require(!idToLoan[loanId].isSlashed);
+        require(!idToLoan[loanId].isSlashed, "Loan has already been slashed");
         //get slash % with 10,000 multiplier
         uint256 slashPercent = (10000 * idToLoan[loanId].principalRemaining) /
             getTotalAssetValue();
@@ -552,33 +562,32 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         stakingSlash -= stakingSlash;
         idToLoan[loanId].isSlashed = true;
         defaultedLoans.push(loanId);
-        //sell collateral if any
+        //withdraw and sell collateral if any
         if (idToLoan[loanId].collateralAmount != 0) {
-            _withdrawFromLendingPool(
-                idToLoan[loanId].collateral,
-                idToLoan[loanId].collateralAmount,
-                address(this)
-            );
-            uint256 baseTokenRecovered = _swapToken(
-                idToLoan[loanId].collateral,
+            address collateral = idToLoan[loanId].collateral;
+            uint256 amount = idToLoan[loanId].collateralAmount;
+            _withdrawFromLendingPool(collateral, amount, address(this));
+            uint256 baseTokenOut = _swapToken(
+                collateral,
                 baseToken,
                 minOut,
-                idToLoan[loanId].collateralAmount
+                amount
             );
-            _depositToLendingPool(baseToken, baseTokenRecovered);
+            _depositToLendingPool(baseToken, baseTokenOut);
             //update collateral info
-            idToLoan[loanId].collateralAmount = 0;
             collateralOwed[idToLoan[loanId].collateral] -= idToLoan[loanId]
                 .collateralAmount;
+            idToLoan[loanId].collateralAmount = 0;
         }
+        emit loanSlashed(loanId);
     }
 
     /**
-     * Sell the slashing balance for BNPL to give to lenders as aUSD
+     * Sell the slashing balance of BNPL to give to lenders as aUSD
      */
     function sellSlashed(uint256 minOut) external {
         //ensure there is a balance to sell
-        require(slashingBalance > 0);
+        require(slashingBalance > 0, "There is no slashing balance to sell");
         //As BNPL-ETH Pair is the most liquid, goes BNPL > ETH > baseToken
         uint256 baseTokenOut = _swapToken(
             BNPL,
@@ -609,6 +618,79 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         _depositToLendingPool(baseToken, _amount);
 
         emit baseTokensDonated(_amount);
+    }
+
+    //OPERATOR ONLY FUNCTIONS
+
+    /**
+     * Approve a pending loan request
+     * Ensures collateral amount has been posted to prevent front run withdrawal
+     */
+    function approveLoan(uint256 loanId, uint256 requiredCollateralAmount)
+        external
+        ensureNodeActive
+        operatorOnly
+    {
+        //ensure the loan was never started
+        require(idToLoan[loanId].loanStartTime == 0);
+        //ensure the collateral is still posted
+        require(idToLoan[loanId].collateralAmount >= requiredCollateralAmount);
+
+        //remove from loanRequests and add loan to current loans
+        for (uint256 i = 0; i < pendingRequests.length; i++) {
+            if (loanId == pendingRequests[i]) {
+                pendingRequests[i] = pendingRequests[
+                    pendingRequests.length - 1
+                ];
+                pendingRequests.pop();
+            }
+        }
+        currentLoans.push(loanId);
+
+        //add the principal remaining and start the loan
+        idToLoan[loanId].principalRemaining = idToLoan[loanId].loanAmount;
+        idToLoan[loanId].loanStartTime = block.timestamp;
+
+        //send the funds and update accounts (minus 0.75% origination fee)
+        accountsReceiveable += idToLoan[loanId].loanAmount;
+
+        ILendingPool lendingPool = _getLendingPool();
+        lendingPool.withdraw(
+            baseToken,
+            (idToLoan[loanId].loanAmount * 397) / 400,
+            idToLoan[loanId].borrower
+        );
+        //send the 0.5% origination fee to treasury and agent
+        lendingPool.withdraw(
+            baseToken,
+            (idToLoan[loanId].loanAmount * 1) / 200,
+            treasury
+        );
+        //send the 0.25% origination fee to treasury and agent
+        lendingPool.withdraw(
+            baseToken,
+            (idToLoan[loanId].loanAmount * 1) / 400,
+            loanToAgent[loanId]
+        );
+
+        emit approvedLoan(loanId, idToLoan[loanId].borrower);
+    }
+
+    /**
+     * Used to reject all current pending loan requests
+     */
+    function clearPendingLoans() external operatorOnly {
+        pendingRequests = new uint256[](0);
+    }
+
+    /**
+     * Whitelist a given list of addresses
+     */
+    function whitelistAddresses(address whitelistAddition)
+        external
+        operatorOnly
+    {
+        whitelistedAddresses[whitelistAddition] = true;
     }
 
     //PRIVATE FUNCTIONS
@@ -690,7 +772,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256[] memory amounts,
         address[] memory path,
         address _to
-    ) internal virtual {
+    ) private {
         for (uint256 i; i < path.length - 1; i++) {
             (address input, address output) = (path[i], path[i + 1]);
             (address token0, ) = UniswapV2Library.sortTokens(input, output);
@@ -705,79 +787,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
                 UniswapV2Library.pairFor(uniswapFactory, input, output)
             ).swap(amount0Out, amount1Out, to, new bytes(0));
         }
-    }
-
-    //OPERATOR ONLY FUNCTIONS
-
-    /**
-     * Approve a pending loan request
-     * Ensures collateral amount has been posted to prevent front run withdrawal
-     */
-    function approveLoan(uint256 loanId, uint256 requiredCollateralAmount)
-        external
-        ensureNodeActive
-        operatorOnly
-    {
-        //ensure the loan was never started
-        require(idToLoan[loanId].loanStartTime == 0);
-        //ensure the collateral is still posted
-        require(idToLoan[loanId].collateralAmount >= requiredCollateralAmount);
-
-        //remove from loanRequests and add loan to current loans
-        for (uint256 i = 0; i < pendingRequests.length; i++) {
-            if (loanId == pendingRequests[i]) {
-                pendingRequests[i] = pendingRequests[
-                    pendingRequests.length - 1
-                ];
-                pendingRequests.pop();
-            }
-        }
-        currentLoans.push(loanId);
-
-        //add the principal remaining and start the loan
-        idToLoan[loanId].principalRemaining = idToLoan[loanId].loanAmount;
-        idToLoan[loanId].loanStartTime = block.timestamp;
-
-        //send the funds and update accounts (minus 0.75% origination fee)
-        accountsReceiveable += idToLoan[loanId].loanAmount;
-
-        ILendingPool lendingPool = _getLendingPool();
-        lendingPool.withdraw(
-            baseToken,
-            (idToLoan[loanId].loanAmount * 397) / 400,
-            idToLoan[loanId].borrower
-        );
-        //send the 0.5% origination fee to treasury and agent
-        lendingPool.withdraw(
-            baseToken,
-            (idToLoan[loanId].loanAmount * 1) / 200,
-            treasury
-        );
-        //send the 0.25% origination fee to treasury and agent
-        lendingPool.withdraw(
-            baseToken,
-            (idToLoan[loanId].loanAmount * 1) / 400,
-            loanToAgent[loanId]
-        );
-
-        emit approvedLoan(loanId, idToLoan[loanId].borrower);
-    }
-
-    /**
-     * Used to reject all current pending loan requests
-     */
-    function clearPendingLoans() external operatorOnly {
-        pendingRequests = new uint256[](0);
-    }
-
-    /**
-     * Whitelist a given list of addresses
-     */
-    function whitelistAddresses(address whitelistAddition)
-        external
-        operatorOnly
-    {
-        whitelistedAddresses[whitelistAddition] = true;
     }
 
     //VIEW ONLY FUNCTIONS
