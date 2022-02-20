@@ -37,6 +37,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     mapping(address => uint256) public stakingShares;
     mapping(address => uint256) public lastStakeTime;
     mapping(address => uint256) public unbondingShares;
+    mapping(uint256 => address) public loanToAgent;
 
     //For Collateral
     mapping(address => uint256) public collateralOwed;
@@ -135,6 +136,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         bool interestOnly,
         address collateral,
         uint256 collateralAmount,
+        address agent,
         string memory message
     ) external returns (uint256 requestId) {
         //bank node must be active
@@ -169,6 +171,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             //deposit the collateral in AAVE to accrue interest
             _depositToLendingPool(collateral, collateralAmount);
         }
+
+        //save the agent of the loan
+        loanToAgent[requestId] = agent;
+
         emit LoanRequest(requestId);
     }
 
@@ -307,10 +313,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 paymentAmount = (idToLoan[loanId].principalRemaining +
             interestAmount);
         //make payment
-        baseToken.transferFrom(msg.sender, address(this), paymentAmount);
-
+        TransferHelper.safeTransferFrom(
+            address(baseToken),
+            msg.sender,
+            address(this),
+            paymentAmount
+        );
         uint256 interestWithheld = ((interestAmount * 3) / 10);
-
         _depositToLendingPool(
             address(baseToken),
             paymentAmount - interestWithheld
@@ -338,7 +347,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         );
         //33% to go to operator as baseToken
         uint256 operatorFees = (baseToken.balanceOf(address(this))) / 3;
-        baseToken.transfer(operator, operatorFees);
+        TransferHelper.safeTransfer(address(baseToken), operator, operatorFees);
         //remainder (67%) is traded for staking rewards
         uint256 stakingRewards = _swapToken(
             address(baseToken),
@@ -444,7 +453,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
                     slashingBalance);
         }
         //collect the BNPL
-        BNPL.transferFrom(msg.sender, address(this), _amount);
+        TransferHelper.safeTransferFrom(
+            address(BNPL),
+            msg.sender,
+            address(this),
+            _amount
+        );
         //issue the shares
         stakingShares[staker] += what;
         totalStakingShares += what;
@@ -576,12 +590,24 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     //PRIVATE FUNCTIONS
 
     /**
-     * Deposit token onto AAVE
+     * Deposit token onto AAVE lending pool
      */
     function _depositToLendingPool(address tokenIn, uint256 amountIn) private {
         ILendingPool lendingPool = _getLendingPool();
         TransferHelper.safeApprove(tokenIn, address(lendingPool), amountIn);
         lendingPool.deposit(tokenIn, amountIn, address(this), 0);
+    }
+
+    /**
+     * Withdraw token from AAVE lending pool
+     */
+    function _withdrawFromLendingPoo(
+        address tokenOut,
+        uint256 amountOut,
+        address to
+    ) private {
+        ILendingPool lendingPool = _getLendingPool();
+        lendingPool.withdraw(tokenOut, amountOut, to);
     }
 
     /**
@@ -692,19 +718,26 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         idToLoan[loanId].principalRemaining = idToLoan[loanId].loanAmount;
         idToLoan[loanId].loanStartTime = block.timestamp;
 
-        //send the funds and update accounts (minus 0.25% origination fee)
+        //send the funds and update accounts (minus 0.75% origination fee)
         accountsReceiveable += idToLoan[loanId].loanAmount;
+
         ILendingPool lendingPool = _getLendingPool();
         lendingPool.withdraw(
             address(baseToken),
-            (idToLoan[loanId].loanAmount * 199) / 200,
+            (idToLoan[loanId].loanAmount * 397) / 400,
             idToLoan[loanId].borrower
         );
-        //send the origination fee to treasury and agent
+        //send the 0.5% origination fee to treasury and agent
+        lendingPool.withdraw(
+            address(baseToken),
+            (idToLoan[loanId].loanAmount * 1) / 200,
+            treasury
+        );
+        //send the 0.25% origination fee to treasury and agent
         lendingPool.withdraw(
             address(baseToken),
             (idToLoan[loanId].loanAmount * 1) / 400,
-            treasury
+            loanToAgent[loanId]
         );
 
         emit approvedLoan(loanId, idToLoan[loanId].borrower);

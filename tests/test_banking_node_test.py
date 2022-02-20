@@ -147,6 +147,7 @@ def test_banking_node_regular_loan():
         False,
         "0x0000000000000000000000000000000000000000",
         0,
+        account,
         "tester loan",
         {"from": account2},
     )
@@ -229,6 +230,10 @@ def test_banking_node_regular_loan():
         and usdt.balanceOf(node_address) <= base_token_withheld * 1.01
     )
 
+    # Ensure loan can not be slashed
+    with pytest.raises(Exception):
+        node.slashLoan(loan_id, {"from": account})
+
     # Make the remaining 11 payments
     for x in range(11):
         node.makeLoanPayment(loan_id, {"from": account2})
@@ -283,6 +288,7 @@ def test_banking_node_regular_loan():
             False,
             bnpl,
             COLLAT_AMOUNT,
+            account,
             "collateral loan",
             {"from": account2},
         )
@@ -301,8 +307,9 @@ def test_banking_node_regular_loan():
         12,
         1000,
         False,
-        "0x0000000000000000000000000000000000000000",
-        0,
+        busd_address,
+        COLLAT_AMOUNT,
+        account,
         "collateral loan",
         {"from": account2},
     )
@@ -312,6 +319,8 @@ def test_banking_node_regular_loan():
     assert node.getPendingRequestCount() == 1
     assert busd.balanceOf(account2) < initial_busd_balance
     assert node.collateralOwed(busd_address) == COLLAT_AMOUNT
+
+    loan_id_collateral = node.pendingRequests(0)
 
     # Request a second loan with no collateral
 
@@ -323,9 +332,21 @@ def test_banking_node_regular_loan():
         False,
         "0x0000000000000000000000000000000000000000",
         0,
+        account,
         "slashing loan",
         {"from": account2},
     )
     tx.wait(1)
 
     assert node.getPendingRequestCount() == 2
+
+    loan_id_slashing = node.pendingRequests(1)
+
+    # Test Clear pending loans
+    node.clearPendingLoans({"from"})
+    assert node.getPendingRequestCount() == 0
+
+    # Check collateral can be withdrawn
+    node.withdrawCollateral(loan_id_collateral)
+    assert busd.balanceOf(account2) == initial_busd_balance
+    assert node.collateralOwed(busd_address) < COLLAT_AMOUNT * 0.01
