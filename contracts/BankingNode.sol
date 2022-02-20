@@ -109,7 +109,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Ensure that the loan has principal to be paid
      */
-    modifier ensurePrincipalRemaining() {
+    modifier ensurePrincipalRemaining(uint256 loanId) {
         require(
             idToLoan[loanId].principalRemaining > 0,
             "No payments are required for this loan"
@@ -300,7 +300,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /*
      * Make a loan payment
      */
-    function makeLoanPayment(uint256 loanId) external ensurePrincipalRemaining {
+    function makeLoanPayment(uint256 loanId)
+        external
+        ensurePrincipalRemaining(loanId)
+    {
         uint256 paymentAmount = getNextPayment(loanId);
         uint256 interestPortion = (idToLoan[loanId].principalRemaining *
             idToLoan[loanId].interestRate) / 10000;
@@ -344,7 +347,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Repay remaining balance to save on interest cost
      * Payment amount is remaining principal + 1 period of interest
      */
-    function repayEarly(uint256 loanId) external ensurePrincipalRemaining {
+    function repayEarly(uint256 loanId)
+        external
+        ensurePrincipalRemaining(loanId)
+    {
         //make a payment of remaining principal + 1 period of interest
         uint256 interestAmount = (idToLoan[loanId].principalRemaining *
             idToLoan[loanId].interestRate) / 10000;
@@ -538,7 +544,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function slashLoan(uint256 loanId, uint256 minOut)
         external
-        ensurePrincipalRemaining
+        ensurePrincipalRemaining(loanId)
     {
         //require that the given due date and grace period have expired
         require(
