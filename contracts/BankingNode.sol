@@ -279,7 +279,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 feesAccrued = aToken.balanceOf(address(this)) -
             collateralOwed[collateral];
         //ensure there is collateral to collect
-        require(feesAccrued > 0);
+        require(feesAccrued > 0, "No fees have been accrued");
         lendingPool.withdraw(collateral, feesAccrued, address(this));
 
         _swapToken(collateral, address(BNPL), 0, feesAccrued);
@@ -539,7 +539,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //check that the loan has remaining payments
         require(idToLoan[loanId].principalRemaining != 0);
         //check loan is not slashed already
-        require(idToLoan[loanId].isSlashed == false);
+        require(!idToLoan[loanId].isSlashed);
         //get slash % with 10,000 multiplier
         uint256 slashPercent = (10000 * idToLoan[loanId].principalRemaining) /
             getTotalAssetValue();
@@ -559,12 +559,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
                 idToLoan[loanId].collateralAmount,
                 address(this)
             );
-            _swapToken(
+            uint256 baseTokenRecovered = _swapToken(
                 idToLoan[loanId].collateral,
                 baseToken,
                 minOut,
                 idToLoan[loanId].collateralAmount
             );
+            _depositToLendingPool(baseToken, baseTokenRecovered);
             //update collateral info
             idToLoan[loanId].collateralAmount = 0;
             collateralOwed[idToLoan[loanId].collateral] -= idToLoan[loanId]
