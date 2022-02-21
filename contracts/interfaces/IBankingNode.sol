@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 interface IBankingNode {
     //ERC20 functions
+
     function name() external pure returns (string memory);
 
     function symbol() external pure returns (string memory);
@@ -29,6 +30,7 @@ interface IBankingNode {
     ) external returns (bool);
 
     //Banking Node Functions
+
     function requestLoan(
         uint256 loanAmount,
         uint256 paymentInterval,
@@ -70,6 +72,7 @@ interface IBankingNode {
     function donateBaseToken(uint256 _amount) external;
 
     //Operator only functions
+
     function approveLoan(uint256 loanId, uint256 requiredCollateralAmount)
         external;
 
@@ -78,6 +81,7 @@ interface IBankingNode {
     function whitelistAddresses(address whitelistAddition) external;
 
     //View functions
+
     function getBaseTokenBalance(address user) external view returns (uint256);
 
     function getBNPLBalance(address user) external view returns (uint256 what);

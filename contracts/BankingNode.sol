@@ -265,23 +265,19 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Collect AAVE rewards and distribute to lenders
+     * Collect AAVE rewards to be sent to the treasury
      */
     function collectAaveRewards(address[] calldata assets) external {
         uint256 rewardAmount = aaveRewardController.getUserUnclaimedRewards(
             address(this)
         );
         require(rewardAmount > 0, "No rewards to withdraw");
-        uint256 rewards = aaveRewardController.claimRewardsToSelf(
+        uint256 rewards = aaveRewardController.claimRewards(
             assets,
-            rewardAmount
+            rewardAmount,
+            treasury
         );
-        _swapToken(
-            aaveRewardController.REWARD_TOKEN(),
-            address(BNPL),
-            0,
-            rewards
-        );
+
         emit aaveRewardsCollected(rewardAmount);
     }
 
@@ -419,7 +415,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (totalSupply() != 0) {
             what = (_amount * totalSupply()) / getTotalAssetValue();
         }
-        _mint(msg.sender, what);
         //transfer tokens from the user
         TransferHelper.safeTransferFrom(
             baseToken,
@@ -427,6 +422,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             address(this),
             _amount
         );
+        _mint(msg.sender, what);
 
         _depositToLendingPool(baseToken, _amount);
 

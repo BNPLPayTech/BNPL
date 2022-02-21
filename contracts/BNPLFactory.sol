@@ -72,7 +72,7 @@ contract BNPLFactory is Ownable {
         );
         TransferHelper.safeApprove(BNPL, node, 2000000 * 10**18);
         BankingNode(node).stake(2000000 * 10**18);
-        bankingNodesList.push(msg.sender);
+        bankingNodesList.push(node);
         operatorToNode[msg.sender] = node;
     }
 
