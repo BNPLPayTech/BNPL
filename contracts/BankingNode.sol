@@ -121,7 +121,15 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * For operator only functions
      */
     modifier operatorOnly() {
-        require(msg.sender == operator);
+        require(msg.sender == operator, "operator only");
+        _;
+    }
+
+    /**
+     * Requires input value to be non-zero
+     */
+    modifier nonZeroInput(uint256 input) {
+        require(input > 0, "non zero input");
         _;
     }
 
@@ -142,10 +150,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         address _uniswapFactory
     ) external {
         //only to be done by factory
-        require(
-            msg.sender == bnplFactory,
-            "Set up can only be done through BNPL Factory"
-        );
+        require(msg.sender == bnplFactory);
         baseToken = _baseToken;
         BNPL = _BNPL;
         requireKYC = _requireKYC;
@@ -182,14 +187,15 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         address agent,
         string memory message
     ) external ensureNodeActive returns (uint256 requestId) {
-        require(loanAmount > 0, "Invalid loan amount");
-        require(paymentInterval > 0, "Invalid Payment Interval");
+        require(
+            loanAmount > 0 && paymentInterval > 0 && interestRate > 0,
+            "Invalid loan input"
+        );
         //157,680,000 seconds in 5 years
         require(
             paymentInterval * numberOfPayments <= 157680000,
             "5 year maximum loan"
         );
-        require(interestRate > 0, "interest rate must be greater than 0");
         requestId = incrementor;
         incrementor++;
         pendingRequests.push(requestId);
@@ -404,7 +410,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Deposit liquidity to the banking node
      */
-    function deposit(uint256 _amount) external ensureNodeActive {
+    function deposit(uint256 _amount)
+        external
+        ensureNodeActive
+        nonZeroInput(_amount)
+    {
         //check the decimals of the
         uint256 decimalAdjust = 1;
         if (ERC20(baseToken).decimals() != 18) {
@@ -434,7 +444,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * To avoid need to decimal adjust, input _amount is in USDT(or equiv) to withdraw
      * , not BNPL USD to burn
      */
-    function withdraw(uint256 _amount) external {
+    function withdraw(uint256 _amount) external nonZeroInput(_amount) {
         uint256 what = (_amount * totalSupply()) / getTotalAssetValue();
         _burn(msg.sender, what);
         _withdrawFromLendingPool(baseToken, _amount, msg.sender);
@@ -445,10 +455,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Stake BNPL into a node
      */
-    function stake(uint256 _amount) external ensureNodeActive {
-        //require a non-zero deposit
-        require(_amount > 0, "Cannot deposit 0");
-
+    function stake(uint256 _amount)
+        external
+        ensureNodeActive
+        nonZeroInput(_amount)
+    {
         address staker = msg.sender;
         //factory initial bond counted as operator
         if (msg.sender == bnplFactory) {
@@ -480,7 +491,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Unbond BNPL from a node, input is the number shares (sBNPL)
      * Requires a 7 day unbond to prevent frontrun of slashing events or interest repayments
      */
-    function initiateUnstake(uint256 _amount) external {
+    function initiateUnstake(uint256 _amount) external nonZeroInput(_amount) {
         //operator cannot withdraw unless there are no active loans
         if (msg.sender == operator) {
             require(
@@ -488,8 +499,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
                 "Operator can not unbond if there are active loans"
             );
         }
-        //require its a non-zero withdraw
-        require(_amount > 0, "Cannot unbond 0");
         //require the user has enough
         require(
             stakingShares[msg.sender] >= _amount,
@@ -613,8 +622,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Donate baseToken for when debt is collected post default
      * BNPL can be donated by simply sending it to the contract
      */
-    function donateBaseToken(uint256 _amount) external {
-        require(_amount > 0);
+    function donateBaseToken(uint256 _amount) external nonZeroInput(_amount) {
         TransferHelper.safeTransferFrom(
             baseToken,
             msg.sender,
@@ -693,11 +701,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Whitelist a given list of addresses
      */
-    function whitelistAddresses(address whitelistAddition)
+    function whitelistAddresses(address[] memory whitelistAddition)
         external
         operatorOnly
     {
-        whitelistedAddresses[whitelistAddition] = true;
+        for (uint256 i; i < whitelistAddition.length; i++) {
+            whitelistedAddresses[whitelistAddition[i]] = true;
+        }
     }
 
     //PRIVATE FUNCTIONS
@@ -744,7 +754,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Swaps token for BNPL, as BNPL-ETH is the only liquid pair, always goes through x > ETH > x
+     * Swaps token for BNPL, as BNPL-ETH is the only liquid pair, always goes through tokenIn > ETH > tokenOut
      */
     function _swapToken(
         address tokenIn,
@@ -762,38 +772,30 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             path
         );
         //ensure slippage
-        require(amounts[amounts.length - 1] >= minOut, "Insufficient outout");
+        require(amounts[2] >= minOut, "Insufficient output");
         TransferHelper.safeTransfer(
             tokenIn,
-            UniswapV2Library.pairFor(uniswapFactory, path[0], path[1]),
+            UniswapV2Library.pairFor(uniswapFactory, tokenIn, path[1]),
             amounts[0]
         );
-        _swap(amounts, path, address(this));
-        return amounts[amounts.length - 1];
-    }
-
-    // **** SWAP ****
-    // Copied directly from UniswapV2Router
-    // requires the initial amount to have already been sent to the first pair
-    function _swap(
-        uint256[] memory amounts,
-        address[] memory path,
-        address _to
-    ) private {
-        for (uint256 i; i < path.length - 1; i++) {
+        // **** SWAP ****
+        // Copied directly from UniswapV2Router
+        // requires the initial amount to have already been sent to the first pair
+        for (uint256 i; i < 2; i++) {
             (address input, address output) = (path[i], path[i + 1]);
             (address token0, ) = UniswapV2Library.sortTokens(input, output);
             uint256 amountOut = amounts[i + 1];
             (uint256 amount0Out, uint256 amount1Out) = input == token0
                 ? (uint256(0), amountOut)
                 : (amountOut, uint256(0));
-            address to = i < path.length - 2
-                ? UniswapV2Library.pairFor(uniswapFactory, output, path[i + 2])
-                : _to;
+            address to = i < 1
+                ? UniswapV2Library.pairFor(uniswapFactory, output, path[2])
+                : address(this);
             IUniswapV2Pair(
                 UniswapV2Library.pairFor(uniswapFactory, input, output)
             ).swap(amount0Out, amount1Out, to, new bytes(0));
         }
+        return amounts[2];
     }
 
     //VIEW ONLY FUNCTIONS

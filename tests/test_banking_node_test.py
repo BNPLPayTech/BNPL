@@ -268,7 +268,9 @@ def test_banking_node_regular_loan():
     initial_operator_bnpl = node.getBNPLBalance(account)
     initial_operator_usdt = usdt.balanceOf(account)
 
-    tx = node.collectFees({"from": account})
+    tx = node.collectFees(
+        {"from": account, "gas_limit": 300000}
+    )  # Manual gas limit as it fails often from out of gas
     tx.wait(1)
 
     # Check rewards were distributed

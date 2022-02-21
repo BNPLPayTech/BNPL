@@ -60,7 +60,7 @@ def test_banking_node_collateral_loan():
     assert node.getBNPLBalance(account) == BOND_AMOUNT
 
     # Unbond and redeposit for future unbonding checks
-    node.initiateUnstake(BOND_AMOUNT / 2, {"from": account})
+    node.initiateUnstake(BOND_AMOUNT / 2, {"from": account, "gas_limit": 1000000})
     approve_erc20(BOND_AMOUNT / 2, node_address, bnpl, account)
     node.stake(BOND_AMOUNT / 2, {"from": account})
 
