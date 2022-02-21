@@ -564,6 +564,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         unbondingAmount -= unbondingSlash;
         stakingSlash -= stakingSlash;
         idToLoan[loanId].isSlashed = true;
+        //remove from current loans and add to defualt loans
+        _removeCurrentLoan(loanId);
         defaultedLoans.push(loanId);
         //withdraw and sell collateral if any
         if (idToLoan[loanId].collateralAmount != 0) {
