@@ -408,7 +408,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Deposit liquidity to the banking node
      */
-    function deposit(uint256 _amount) public ensureNodeActive {
+    function deposit(uint256 _amount) external ensureNodeActive {
         //check the decimals of the
         uint256 decimalAdjust = 1;
         if (ERC20(baseToken).decimals() != 18) {
