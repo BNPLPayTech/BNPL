@@ -182,7 +182,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         address agent,
         string memory message
     ) external ensureNodeActive returns (uint256 requestId) {
+        require(loanAmount > 0, "Invalid loan amount");
         require(paymentInterval > 0, "Invalid Payment Interval");
+        //157,680,000 seconds in 5 years
+        require(
+            paymentInterval * numberOfPayments <= 157680000,
+            "5 year maximum loan"
+        );
+        require(interestRate > 0, "interest rate must be greater than 0");
         requestId = incrementor;
         incrementor++;
         pendingRequests.push(requestId);
