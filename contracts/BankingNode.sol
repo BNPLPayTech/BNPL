@@ -233,6 +233,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             idToLoan[loanId].principalRemaining == 0,
             "Loan is still ongoing"
         );
+        //no need to check if loan is slashed as collateral amont set to 0 on slashing
         require(
             idToLoan[loanId].collateralAmount != 0,
             "No collateral to withdraw"

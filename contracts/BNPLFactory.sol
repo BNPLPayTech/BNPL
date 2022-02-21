@@ -85,15 +85,6 @@ contract BNPLFactory is Ownable {
         approvedBaseTokens[_baseToken] = true;
     }
 
-    //GETTOR FUNCTIONS
-
-    /**
-     * Get node address of a operator
-     */
-    function getNode(address _operator) external view returns (address) {
-        return operatorToNode[_operator];
-    }
-
     /**
      * Get number of current nodes
      */
