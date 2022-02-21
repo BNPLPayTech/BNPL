@@ -7,7 +7,7 @@ import "./BankingNode.sol";
 import "./libraries/TransferHelper.sol";
 
 contract BNPLFactory is Ownable {
-    mapping(address => address) operatorToNode;
+    mapping(address => address) public operatorToNode;
     address[] public bankingNodesList;
     address public immutable BNPL;
     address public immutable lendingPoolAddressesProvider;

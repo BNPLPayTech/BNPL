@@ -47,7 +47,7 @@ def test_banking_node_early_repayment():
     create_node(factory)
 
     # Check that node was created
-    node_address = factory.getNode(account)
+    node_address = factory.operatorToNode(account)
     node = Contract.from_abi(BankingNode._name, node_address, BankingNode.abi)
 
     # Check node immutables
