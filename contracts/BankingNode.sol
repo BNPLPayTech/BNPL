@@ -261,15 +261,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Collect AAVE rewards and distribute to lenders
      */
     function collectAaveRewards(address[] calldata assets) external {
-        uint256 rewardAmount = aaveRewardController.getRewardsBalance(
-            assets,
+        uint256 rewardAmount = aaveRewardController.getUserUnclaimedRewards(
             address(this)
         );
         require(rewardAmount > 0, "No rewards to withdraw");
-        uint256 rewards = aaveRewardController.claimRewards(
+        uint256 rewards = aaveRewardController.claimRewardsToSelf(
             assets,
-            rewardAmount,
-            address(this)
+            rewardAmount
         );
         _swapToken(
             aaveRewardController.REWARD_TOKEN(),
