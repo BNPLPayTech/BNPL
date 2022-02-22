@@ -11,23 +11,22 @@ import "./libraries/TransferHelper.sol";
 
 contract BankingNode is ERC20("BNPL USD", "bUSD") {
     address public operator;
-
     address public baseToken; //base liquidity token, e.g. USDT or USDC
-    uint256 public incrementor;
+    uint256 private incrementor;
     uint256 public gracePeriod;
     bool public requireKYC;
 
     address public treasury;
 
-    address public uniswapFactory;
+    address private uniswapFactory;
     IAaveIncentivesController public aaveRewardController;
     ILendingPoolAddressesProvider public lendingPoolProvider;
-    address public WETH;
+    address private WETH;
     address public immutable bnplFactory;
     address public BNPL;
 
     //For loans
-    mapping(uint256 => Loan) idToLoan;
+    mapping(uint256 => Loan) public idToLoan;
     uint256[] public pendingRequests;
     uint256[] public currentLoans;
     uint256[] public defaultedLoans;
@@ -38,7 +37,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     mapping(address => uint256) public stakingShares;
     mapping(address => uint256) public unbondTime;
     mapping(address => uint256) public unbondingShares;
-    mapping(uint256 => address) public loanToAgent;
+    mapping(uint256 => address) private loanToAgent;
 
     //For Collateral
     mapping(address => uint256) public collateralOwed;
@@ -655,7 +654,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             (idToLoan[loanId].loanAmount * 1) / 200,
             treasury
         );
-        //send the 0.25% origination fee to treasury and agent
         lendingPool.withdraw(
             baseToken,
             (idToLoan[loanId].loanAmount * 1) / 400,

@@ -13,7 +13,7 @@ contract BNPLFactory is Ownable {
     address public immutable lendingPoolAddressesProvider;
     address public immutable WETH;
     address public immutable uniswapFactory;
-    mapping(address => bool) approvedBaseTokens;
+    mapping(address => bool) public approvedBaseTokens;
     address public aaveDistributionController;
 
     //Constuctor
