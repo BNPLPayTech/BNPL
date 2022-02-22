@@ -539,7 +539,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         accountsReceiveable -= principalLost;
         slashingBalance += unbondingSlash + stakingSlash;
         unbondingAmount -= unbondingSlash;
-        stakingSlash -= stakingSlash;
         loan.isSlashed = true;
         //remove from current loans and add to defualt loans
         _removeCurrentLoan(loanId);

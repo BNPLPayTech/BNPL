@@ -16,9 +16,7 @@ import "./interfaces/IBankingNode.sol";
 
 contract BNPLRewardsController is Ownable {
     BNPLFactory public immutable bnplFactory;
-
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
-
     address public immutable bnpl;
     address public treasury;
     uint256 public bnplPerSecond; //initiated to
