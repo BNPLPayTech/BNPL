@@ -50,10 +50,6 @@ def test_banking_node_regular_loan():
     node_address = factory.operatorToNode(account)
     node = Contract.from_abi(BankingNode._name, node_address, BankingNode.abi)
 
-    # Check node immutables
-    assert node.uniswapFactory() == config["networks"][network.show_active()]["factory"]
-    assert node.WETH() == config["networks"][network.show_active()]["weth"]
-
     # Check that 2M BNPL was bonded
     assert node.getBNPLBalance(account) == BOND_AMOUNT
 

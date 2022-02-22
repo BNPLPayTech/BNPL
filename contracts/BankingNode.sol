@@ -234,28 +234,23 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Withdraw the collateral from a loan
      */
     function withdrawCollateral(uint256 loanId) external {
-        //must be the borrower or operator to withdraw, and loan must be either paid/not initiated
-        require(msg.sender == idToLoan[loanId].borrower, "Invalid user");
-        require(idToLoan[loanId].principalRemaining == 0, "L ongoing");
-        //no need to check if loan is slashed as collateral amont set to 0 on slashing
-        require(idToLoan[loanId].collateralAmount != 0, "no collat");
+        Loan storage loan = idToLoan[loanId];
+        address collateral = loan.collateral;
+        uint256 amount = loan.collateralAmount;
 
-        _withdrawFromLendingPool(
-            idToLoan[loanId].collateral,
-            idToLoan[loanId].collateralAmount,
-            idToLoan[loanId].borrower
-        );
+        //must be the borrower or operator to withdraw, and loan must be either paid/not initiated
+        require(msg.sender == loan.borrower, "Invalid user");
+        require(loan.principalRemaining == 0, "L ongoing");
+        //no need to check if loan is slashed as collateral amont set to 0 on slashing
+        require(amount != 0, "no collat");
+
+        _withdrawFromLendingPool(collateral, amount, loan.borrower);
 
         //update the amounts
-        collateralOwed[idToLoan[loanId].collateral] -= idToLoan[loanId]
-            .collateralAmount;
-        idToLoan[loanId].collateralAmount = 0;
+        collateralOwed[collateral] -= amount;
+        loan.collateralAmount = 0;
 
-        emit collateralWithdrawn(
-            loanId,
-            idToLoan[loanId].collateral,
-            idToLoan[loanId].collateralAmount
-        );
+        emit collateralWithdrawn(loanId, collateral, amount);
     }
 
     /**
@@ -300,22 +295,20 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         external
         ensurePrincipalRemaining(loanId)
     {
+        Loan storage loan = idToLoan[loanId];
         uint256 paymentAmount = getNextPayment(loanId);
-        uint256 interestPortion = (idToLoan[loanId].principalRemaining *
-            idToLoan[loanId].interestRate) / 10000;
+        uint256 interestPortion = (loan.principalRemaining *
+            loan.interestRate) / 10000;
         //reduce accounts receiveable and loan principal if principal + interest payment
-        if (!idToLoan[loanId].interestOnly) {
+        if (!loan.interestOnly) {
             uint256 principalPortion = paymentAmount - interestPortion;
-            idToLoan[loanId].principalRemaining -= principalPortion;
+            loan.principalRemaining -= principalPortion;
             accountsReceiveable -= principalPortion;
         } else {
             //if interest only, check if it was the final payment
-            if (
-                idToLoan[loanId].paymentsMade + 1 ==
-                idToLoan[loanId].numberOfPayments
-            ) {
-                accountsReceiveable -= idToLoan[loanId].principalRemaining;
-                idToLoan[loanId].principalRemaining = 0;
+            if (loan.paymentsMade + 1 == loan.numberOfPayments) {
+                accountsReceiveable -= loan.principalRemaining;
+                loan.principalRemaining = 0;
             }
         }
         //make payment
@@ -326,14 +319,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             paymentAmount
         );
         //deposit the tokens into AAVE on behalf of the pool contract, withholding 30% and the interest as baseToken
-        uint256 interestWithheld = ((interestPortion * 3) / 10);
+        uint256 interestWithheld = (interestPortion * 3) / 10;
         _depositToLendingPool(baseToken, paymentAmount - interestWithheld);
         //increment the loan status
-        idToLoan[loanId].paymentsMade++;
+        loan.paymentsMade++;
         //check if it was the final payment
-        if (
-            idToLoan[loanId].paymentsMade == idToLoan[loanId].numberOfPayments
-        ) {
+        if (loan.paymentsMade == loan.numberOfPayments) {
             _removeCurrentLoan(loanId);
         }
         emit loanPaymentMade(loanId);
@@ -347,11 +338,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         external
         ensurePrincipalRemaining(loanId)
     {
+        Loan storage loan = idToLoan[loanId];
+        uint256 principalLeft = loan.principalRemaining;
         //make a payment of remaining principal + 1 period of interest
-        uint256 interestAmount = (idToLoan[loanId].principalRemaining *
-            idToLoan[loanId].interestRate) / 10000;
-        uint256 paymentAmount = idToLoan[loanId].principalRemaining +
-            interestAmount;
+        uint256 interestAmount = (principalLeft * loan.interestRate) / 10000;
+        uint256 paymentAmount = principalLeft + interestAmount;
         //make payment
         TransferHelper.safeTransferFrom(
             baseToken,
@@ -363,10 +354,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         _depositToLendingPool(baseToken, paymentAmount - interestWithheld);
 
         //update accounts
-        accountsReceiveable -= idToLoan[loanId].principalRemaining;
-        idToLoan[loanId].principalRemaining = 0;
+        accountsReceiveable -= principalLeft;
+        loan.principalRemaining = 0;
         //increment the loan status to final and remove from current loans array
-        idToLoan[loanId].paymentsMade = idToLoan[loanId].numberOfPayments;
+        loan.paymentsMade = loan.numberOfPayments;
         _removeCurrentLoan(loanId);
 
         emit loanRepaidEarly(loanId);
@@ -452,15 +443,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
 
         //calcualte the number of shares to give
-        uint256 what = 0;
-        if (totalStakingShares == 0) {
-            what = _amount;
-        } else {
+        uint256 what = _amount;
+        if (totalStakingShares != 0) {
             what = (_amount * totalStakingShares) / getStakedBNPL();
         }
         //collect the BNPL
         TransferHelper.safeTransferFrom(
-            address(BNPL),
+            BNPL,
             msg.sender,
             address(this),
             _amount
@@ -538,38 +527,42 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             block.timestamp > getNextDueDate(loanId) + gracePeriod,
             "not expired"
         );
+        Loan storage loan = idToLoan[loanId];
         //check loan is not slashed already
-        require(!idToLoan[loanId].isSlashed, "already slashed");
+        require(!loan.isSlashed, "already slashed");
         //get slash % with 10,000 multiplier
-        uint256 slashPercent = (10000 * idToLoan[loanId].principalRemaining) /
-            getTotalAssetValue();
+        uint256 principalLost = loan.principalRemaining;
+        uint256 slashPercent = (10000 * principalLost) / getTotalAssetValue();
         uint256 unbondingSlash = (unbondingAmount * slashPercent) / 10000;
         uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 10000;
         //slash both staked and bonded balances
-        accountsReceiveable -= idToLoan[loanId].principalRemaining;
+        accountsReceiveable -= principalLost;
         slashingBalance += unbondingSlash + stakingSlash;
         unbondingAmount -= unbondingSlash;
         stakingSlash -= stakingSlash;
-        idToLoan[loanId].isSlashed = true;
+        loan.isSlashed = true;
         //remove from current loans and add to defualt loans
         _removeCurrentLoan(loanId);
         defaultedLoans.push(loanId);
         //withdraw and sell collateral if any
-        if (idToLoan[loanId].collateralAmount != 0) {
-            address collateral = idToLoan[loanId].collateral;
-            uint256 amount = idToLoan[loanId].collateralAmount;
-            _withdrawFromLendingPool(collateral, amount, address(this));
+        uint256 collateralPosted = loan.collateralAmount;
+        if (collateralPosted > 0) {
+            address collateral = loan.collateral;
+            _withdrawFromLendingPool(
+                collateral,
+                collateralPosted,
+                address(this)
+            );
             uint256 baseTokenOut = _swapToken(
                 collateral,
                 baseToken,
                 minOut,
-                amount
+                collateralPosted
             );
             _depositToLendingPool(baseToken, baseTokenOut);
             //update collateral info
-            collateralOwed[idToLoan[loanId].collateral] -= idToLoan[loanId]
-                .collateralAmount;
-            idToLoan[loanId].collateralAmount = 0;
+            collateralOwed[collateral] -= collateralPosted;
+            loan.collateralAmount = 0;
         }
         emit loanSlashed(loanId);
     }
@@ -579,7 +572,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function sellSlashed(uint256 minOut) external {
         //ensure there is a balance to sell
-        require(slashingBalance > 0, "0 balance");
+        require(slashingBalance > 0, "0 bal");
         //As BNPL-ETH Pair is the most liquid, goes BNPL > ETH > baseToken
         uint256 baseTokenOut = _swapToken(
             BNPL,
@@ -622,10 +615,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         ensureNodeActive
         operatorOnly
     {
+        Loan storage loan = idToLoan[loanId];
         //ensure the loan was never started
-        require(idToLoan[loanId].loanStartTime == 0);
+        require(loan.loanStartTime == 0);
         //ensure the collateral is still posted
-        require(idToLoan[loanId].collateralAmount >= requiredCollateralAmount);
+        require(loan.collateralAmount >= requiredCollateralAmount);
 
         //remove from loanRequests and add loan to current loans
         for (uint256 i = 0; i < pendingRequests.length; i++) {
@@ -639,31 +633,18 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         currentLoans.push(loanId);
 
         //add the principal remaining and start the loan
-        idToLoan[loanId].principalRemaining = idToLoan[loanId].loanAmount;
-        idToLoan[loanId].loanStartTime = block.timestamp;
-
+        uint256 loanSize = loan.loanAmount;
+        loan.principalRemaining = loanSize;
+        loan.loanStartTime = block.timestamp;
+        accountsReceiveable += loanSize;
         //send the funds and update accounts (minus 0.75% origination fee)
-        accountsReceiveable += idToLoan[loanId].loanAmount;
-
         ILendingPool lendingPool = _getLendingPool();
-        lendingPool.withdraw(
-            baseToken,
-            (idToLoan[loanId].loanAmount * 397) / 400,
-            idToLoan[loanId].borrower
-        );
+        lendingPool.withdraw(baseToken, (loanSize * 397) / 400, loan.borrower);
         //send the 0.5% origination fee to treasury and agent
-        lendingPool.withdraw(
-            baseToken,
-            (idToLoan[loanId].loanAmount * 1) / 200,
-            treasury
-        );
-        lendingPool.withdraw(
-            baseToken,
-            (idToLoan[loanId].loanAmount * 1) / 400,
-            loanToAgent[loanId]
-        );
+        lendingPool.withdraw(baseToken, loanSize / 200, treasury);
+        lendingPool.withdraw(baseToken, loanSize / 400, loanToAgent[loanId]);
 
-        emit approvedLoan(loanId, idToLoan[loanId].borrower);
+        emit approvedLoan(loanId, loan.borrower);
     }
 
     /**
@@ -821,28 +802,23 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function getNextPayment(uint256 loanId) public view returns (uint256) {
         //if loan is completed or not approved, return 0
-        if (idToLoan[loanId].principalRemaining == 0) {
+        Loan storage loan = idToLoan[loanId];
+        if (loan.principalRemaining == 0) {
             return 0;
         }
         // interest rate per period (31536000 seconds in a year)
-        uint256 interestRatePerPeriod = idToLoan[loanId].interestRate;
+        uint256 interestRatePerPeriod = loan.interestRate;
         //check if it is an interest only loan
-        if (idToLoan[loanId].interestOnly) {
+        if (loan.interestOnly) {
             //check if its the final payment
-            if (
-                idToLoan[loanId].paymentsMade + 1 ==
-                idToLoan[loanId].numberOfPayments
-            ) {
+            if (loan.paymentsMade + 1 == loan.numberOfPayments) {
                 //if final payment, then principal + final interest amount
                 return
-                    idToLoan[loanId].loanAmount +
-                    ((idToLoan[loanId].loanAmount * interestRatePerPeriod) /
-                        10000);
+                    loan.loanAmount +
+                    ((loan.loanAmount * interestRatePerPeriod) / 10000);
             } else {
                 //if not final payment, simple interest amount
-                return
-                    (idToLoan[loanId].loanAmount * interestRatePerPeriod) /
-                    10000;
+                return (loan.loanAmount * interestRatePerPeriod) / 10000;
             }
         } else {
             //principal + interest payments, payment given by the formula:
@@ -850,13 +826,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             //i : interest rate per period
             //d : duration
             // p * (i * (1+i) ** d) / ((1+i) ** d - 1)
-            uint256 numerator = idToLoan[loanId].loanAmount *
+            uint256 numerator = loan.loanAmount *
                 interestRatePerPeriod *
-                (10000 + interestRatePerPeriod) **
-                    idToLoan[loanId].numberOfPayments;
+                (10000 + interestRatePerPeriod)**loan.numberOfPayments;
             uint256 denominator = (10000 + interestRatePerPeriod) **
-                idToLoan[loanId].numberOfPayments -
-                (10**(4 * idToLoan[loanId].numberOfPayments));
+                loan.numberOfPayments -
+                (10**(4 * loan.numberOfPayments));
             uint256 adjustment = 10000;
             return numerator / (denominator * adjustment);
         }
@@ -868,13 +843,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function getNextDueDate(uint256 loanId) public view returns (uint256) {
         //check that the loan has been approved and loan is not completed;
-        if (idToLoan[loanId].principalRemaining == 0) {
+        Loan storage loan = idToLoan[loanId];
+        if (loan.principalRemaining == 0) {
             return 0;
         }
         return
-            idToLoan[loanId].loanStartTime +
-            ((idToLoan[loanId].paymentsMade + 1) *
-                idToLoan[loanId].paymentInterval);
+            loan.loanStartTime +
+            ((loan.paymentsMade + 1) * loan.paymentInterval);
     }
 
     /**
