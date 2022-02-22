@@ -62,7 +62,7 @@ contract BNPLRewardsController is Ownable {
         bnplPerSecond = 4492220531033316000; //425,000,000 BNPL to be distributed over 3 years = ~4.49 BNPL per second
     }
 
-    //State Changing Functions
+    //STATE CHANGING FUNCTIONS
 
     /**
      * Add a pool to be allocated rewards
@@ -254,7 +254,7 @@ contract BNPLRewardsController is Ownable {
         treasury = _treasury;
     }
 
-    //Gettor Functions
+    //VIEW FUNCTIONS
 
     /**
      * Return reward multiplier over the given _from to _to timestamps
