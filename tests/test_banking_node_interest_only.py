@@ -44,7 +44,7 @@ def test_banking_node_interest_only():
     # Deploy node
     usdt_address = config["networks"][network.show_active()]["usdt"]
     approve_erc20(BOND_AMOUNT, factory, bnpl, account)
-    create_node(factory, usdt_address)
+    create_node(factory, account, usdt_address)
 
     # Check that node was created
     node_address = factory.operatorToNode(account)
