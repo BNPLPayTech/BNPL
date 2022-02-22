@@ -509,8 +509,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Withdraw BNPL from a bond once unbond period ends
      */
     function unstake() external {
-        //require a 45,000 block gap (~7 day) gap since unbond initiated
-        require(block.timestamp >= unbondTime[msg.sender] + 45000, "unbonding");
+        //require a 604,800 second gap (7 day) gap since unbond initiated
+        require(
+            block.timestamp >= unbondTime[msg.sender] + 604800,
+            "unbonding"
+        );
         uint256 what = (unbondingShares[msg.sender] * unbondingAmount) /
             totalUnbondingShares;
         //transfer the tokens to user
