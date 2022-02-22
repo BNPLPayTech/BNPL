@@ -70,7 +70,7 @@ contract BNPLRewardsController is Ownable {
      * _allocPoints to be based on the number of bnpl staked in the given node
      */
     function add(IBankingNode _lpToken, bool _withUpdate) public {
-        require(isValidNode(address(_lpToken)), "Invalid LP Token");
+        require(isValidNode(address(_lpToken)), "invalid token");
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -186,7 +186,7 @@ contract BNPLRewardsController is Ownable {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
 
-        require(user.amount >= _amount, "Insufficient Balance");
+        require(user.amount >= _amount, "insuffi bal");
 
         updatePool(_pid);
 
@@ -199,12 +199,7 @@ contract BNPLRewardsController is Ownable {
         if (pending > 0) {
             safeBnplTransfer(msg.sender, pending);
         }
-        TransferHelper.safeTransferFrom(
-            address(pool.lpToken),
-            msg.sender,
-            address(this),
-            _amount
-        );
+        TransferHelper.safeTransfer(address(pool.lpToken), msg.sender, _amount);
 
         emit Withdraw(msg.sender, _pid, _amount);
     }
@@ -288,7 +283,7 @@ contract BNPLRewardsController is Ownable {
     function checkForDuplicate(IBankingNode _lpToken) internal view {
         uint256 length = poolInfo.length;
         for (uint256 i = 0; i < length; i++) {
-            require(poolInfo[i].lpToken != _lpToken, "Pool already exists");
+            require(poolInfo[i].lpToken != _lpToken, "pool exists");
         }
     }
 

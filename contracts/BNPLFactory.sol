@@ -42,7 +42,7 @@ contract BNPLFactory is Ownable {
         uint256 _gracePeriod
     ) external returns (address node) {
         //collect the 2M BNPL
-        uint256 bondAmount = 2000000 * 10**18; //2M BNPL to bond a node
+        uint256 bondAmount = 0x1A784379D99DB42000000; //2M BNPL to bond a node
         TransferHelper.safeTransferFrom(
             BNPL,
             msg.sender,
@@ -50,8 +50,8 @@ contract BNPLFactory is Ownable {
             bondAmount
         );
         //one node per operator and base token must be approved
-        require(approvedBaseTokens[_baseToken], "invalid base token");
-        require(operatorToNode[msg.sender] == address(0));
+        require(approvedBaseTokens[_baseToken], "invalid token");
+        require(operatorToNode[msg.sender] == address(0), "1 node only");
         //create a new node
         bytes memory bytecode = type(BankingNode).creationCode;
         bytes32 salt = keccak256(

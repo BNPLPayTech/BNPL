@@ -9,7 +9,6 @@ from scripts.deploy import (
 import pytest
 import time
 from brownie import (
-    BNPLFactory,
     BNPLToken,
     BankingNode,
     Contract,
@@ -43,8 +42,9 @@ def test_banking_node_early_repayment():
     whitelist_usdt(factory)
 
     # Deploy node
+    usdt_address = config["networks"][network.show_active()]["usdt"]
     approve_erc20(BOND_AMOUNT, factory, bnpl, account)
-    create_node(factory)
+    create_node(factory, account, usdt_address)
 
     # Check that node was created
     node_address = factory.operatorToNode(account)

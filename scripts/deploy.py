@@ -45,20 +45,19 @@ def whitelist_usdt(bnpl_factory):
     account = get_account()
     print("Whitelisting USDT..")
     bnpl_factory.whitelistToken(
-        config["networks"][network.show_active()]["usdt"], {"from": account}
+        config["networks"][network.show_active()]["usdt"], True, {"from": account}
     )
 
 
 def whitelist_token(bnpl_factory, token):
     account = get_account()
     print("Whitelisting USDT..")
-    bnpl_factory.whitelistToken(token, {"from": account})
+    bnpl_factory.whitelistToken(token, True, {"from": account})
 
 
-def create_node(bnpl_factory):
-    account = get_account()
+def create_node(bnpl_factory, account, token):
     tx = bnpl_factory.createNewNode(
-        config["networks"][network.show_active()]["usdt"],
+        token,
         False,
         GRACE_PERIOD,
         {"from": account},
@@ -88,7 +87,7 @@ def add_lp(token):
 def deploy_rewards_controller(bnpl_factory, bnpl, start_time):
     account = get_account()
     rewards_controller = BNPLRewardsController.deploy(
-        bnpl_factory, bnpl, account, start_time
+        bnpl_factory, bnpl, account, start_time, {"from": account}
     )
     return rewards_controller
 
