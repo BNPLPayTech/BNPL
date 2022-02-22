@@ -10,20 +10,23 @@ import "./libraries/UniswapV2Library.sol";
 import "./libraries/TransferHelper.sol";
 
 contract BankingNode is ERC20("BNPL USD", "bUSD") {
+    //Node specific variables
     address public operator;
     address public baseToken; //base liquidity token, e.g. USDT or USDC
-    uint256 private incrementor;
     uint256 public gracePeriod;
     bool public requireKYC;
 
-    address public treasury;
-
+    //private variables used for swaps
     address private uniswapFactory;
+    address private WETH;
+    uint256 private incrementor;
+
+    //constants set by factory
     IAaveIncentivesController public aaveRewardController;
     ILendingPoolAddressesProvider public lendingPoolProvider;
-    address private WETH;
     address public immutable bnplFactory;
     address public BNPL;
+    address private treasury;
 
     //For loans
     mapping(uint256 => Loan) public idToLoan;
@@ -38,13 +41,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     mapping(address => uint256) public unbondTime;
     mapping(address => uint256) public unbondingShares;
     mapping(uint256 => address) private loanToAgent;
-
-    //For Collateral
-    mapping(address => uint256) public collateralOwed;
     uint256 public unbondingAmount;
     uint256 public totalUnbondingShares;
     uint256 public totalStakingShares;
     uint256 public slashingBalance;
+
+    //For Collateral in loans
+    mapping(address => uint256) public collateralOwed;
 
     struct Loan {
         address borrower;
