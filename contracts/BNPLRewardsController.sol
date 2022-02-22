@@ -20,7 +20,7 @@ contract BNPLRewardsController is Ownable {
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
 
     address public immutable bnpl;
-    address public immutable treasury;
+    address public treasury;
     uint256 public bnplPerSecond; //initiated to
     uint256 public immutable startTime; //unix time of start
     uint256 public endTime; //3 years of emmisions
@@ -59,7 +59,7 @@ contract BNPLRewardsController is Ownable {
         endTime = _startTime + 94608000; //94,608,000 seconds in 3 years
         bnpl = _bnpl;
         treasury = _treasury;
-        bnplPerSecond = (425000000 * 10**18) / 94608000; //425,000,000 BNPL to be distributed over 3 years
+        bnplPerSecond = 4492220531033316000; //425,000,000 BNPL to be distributed over 3 years = ~4.49 BNPL per second
     }
 
     //State Changing Functions
@@ -159,18 +159,84 @@ contract BNPLRewardsController is Ownable {
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         updatePool(_pid);
+
+        uint256 pending = ((user.amount * pool.accBnplPerShare) / 1e12) -
+            user.rewardDebt;
+
+        user.amount += _amount;
+        user.rewardDebt = (user.amount * pool.accBnplPerShare) / 1e12;
+
+        if (pending > 0) {
+            safeBnplTransfer(msg.sender, pending);
+        }
+        TransferHelper.safeTransferFrom(
+            address(pool.lpToken),
+            msg.sender,
+            address(this),
+            _amount
+        );
+
+        emit Deposit(msg.sender, _pid, _amount);
     }
 
     /**
      * Withdraw LP tokens from the user
      */
-    function withdraw() public {}
+    function withdraw(uint256 _pid, uint256 _amount) public {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][msg.sender];
 
-    function harvestAll() public {}
+        require(user.amount >= _amount, "Insufficient Balance");
 
-    function emergencyWithdraw() public {}
+        updatePool(_pid);
 
-    function safeOXDTransfer() internal {}
+        uint256 pending = ((user.amount * pool.accBnplPerShare) / 1e12) -
+            user.rewardDebt;
+
+        user.amount += _amount;
+        user.rewardDebt = (user.amount * pool.accBnplPerShare) / 1e12;
+
+        if (pending > 0) {
+            safeBnplTransfer(msg.sender, pending);
+        }
+        TransferHelper.safeTransferFrom(
+            address(pool.lpToken),
+            msg.sender,
+            address(this),
+            _amount
+        );
+
+        emit Withdraw(msg.sender, _pid, _amount);
+    }
+
+    /**
+     * Withdraw without caring about rewards. EMERGENCY ONLY.
+     */
+    function emergencyWithdraw(uint256 _pid) public {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][msg.sender];
+        uint256 oldUserAmount = user.amount;
+        user.amount = 0;
+        user.rewardDebt = 0;
+        TransferHelper.safeTransfer(
+            address(pool.lpToken),
+            msg.sender,
+            oldUserAmount
+        );
+        emit EmergencyWithdraw(msg.sender, _pid, oldUserAmount);
+    }
+
+    /**
+     * Safe BNPL transfer function, just in case if rounding error causes pool to not have enough BNPL.
+     */
+    function safeBnplTransfer(address _to, uint256 _amount) internal {
+        uint256 bnplBalance = IERC20(bnpl).balanceOf(address(this));
+        if (_amount > bnplBalance) {
+            TransferHelper.safeTransfer(bnpl, _to, bnplBalance);
+        } else {
+            TransferHelper.safeTransfer(bnpl, _to, _amount);
+        }
+    }
 
     //OWNER ONLY FUNCTIONS
 
@@ -179,6 +245,13 @@ contract BNPLRewardsController is Ownable {
      */
     function updateRewards(uint256 _bnplPerSecond) public onlyOwner {
         bnplPerSecond = _bnplPerSecond;
+    }
+
+    /**
+     * Update the treasury address that bnpl is transfered from
+     */
+    function updateTreasury(address _treasury) public onlyOwner {
+        treasury = _treasury;
     }
 
     //Gettor Functions
