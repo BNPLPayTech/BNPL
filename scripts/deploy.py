@@ -2,6 +2,7 @@ from scripts.helper import get_account, approve_erc20
 from brownie import (
     BNPLToken,
     BNPLFactory,
+    BNPLRewardsController,
     network,
     config,
     Contract,
@@ -16,6 +17,7 @@ BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6
 LP_AMOUNT = 10 * 10**19
 LP_ETH = 10**16
+START_TIME = 0  # CHANGE FOR ACTUAL DEPLOY
 
 
 def deploy_bnpl_token():
@@ -45,6 +47,12 @@ def whitelist_usdt(bnpl_factory):
     bnpl_factory.whitelistToken(
         config["networks"][network.show_active()]["usdt"], {"from": account}
     )
+
+
+def whitelist_token(bnpl_factory, token):
+    account = get_account()
+    print("Whitelisting USDT..")
+    bnpl_factory.whitelistToken(token, {"from": account})
 
 
 def create_node(bnpl_factory):
@@ -77,6 +85,14 @@ def add_lp(token):
     print("Adding BNPL Liquidity to SushiSwap")
 
 
+def deploy_rewards_controller(bnpl_factory, bnpl, start_time):
+    account = get_account()
+    rewards_controller = BNPLRewardsController.deploy(
+        bnpl_factory, bnpl, account, start_time
+    )
+    return rewards_controller
+
+
 def main():
     account = get_account()
     bnpl_factory = deploy_bnpl_factory(
@@ -87,3 +103,4 @@ def main():
     create_node(bnpl_factory)
     node_address = bnpl_factory.getNode(account)
     node = Contract.from_abi(BankingNode._name, node_address, BankingNode.abi)
+    deploy_rewards_controller(bnpl_factory, BNPLToken[-1], START_TIME)

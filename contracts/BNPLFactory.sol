@@ -81,10 +81,13 @@ contract BNPLFactory is Ownable {
     //ONLY OWNER FUNCTIONS
 
     /**
-     * Whitelist a base token for banking nodes(e.g. USDC)
+     * Whitelist or Delist a base token for banking nodes(e.g. USDC)
      */
-    function whitelistToken(address _baseToken) external onlyOwner {
-        approvedBaseTokens[_baseToken] = true;
+    function whitelistToken(address _baseToken, bool _status)
+        external
+        onlyOwner
+    {
+        approvedBaseTokens[_baseToken] = _status;
     }
 
     /**

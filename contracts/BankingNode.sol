@@ -98,7 +98,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             require(
                 //requires banking node to have 15m bnpl
                 getBNPLBalance(operator) >= 0x13DA329B6336471800000,
-                "Banking node is currently not active"
+                "node not active"
             );
             if (requireKYC) {
                 require(whitelistedAddresses[msg.sender]);
@@ -111,10 +111,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Ensure that the loan has principal to be paid
      */
     modifier ensurePrincipalRemaining(uint256 loanId) {
-        require(
-            idToLoan[loanId].principalRemaining > 0,
-            "No payments are required for this loan"
-        );
+        require(idToLoan[loanId].principalRemaining > 0, "no payments needed");
         _;
     }
 
@@ -193,17 +190,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             "Invalid loan input"
         );
         //157,680,000 seconds in 5 years
-        require(
-            paymentInterval * numberOfPayments <= 157680000,
-            "5 year maximum loan"
-        );
+        require(paymentInterval * numberOfPayments <= 157680000, "5 year max");
         requestId = incrementor;
         incrementor++;
         pendingRequests.push(requestId);
         idToLoan[requestId] = Loan(
-            msg.sender,
+            msg.sender, //set borrower
             interestOnly,
-            0,
+            0, //start time initiated to 0
             loanAmount,
             paymentInterval, //interval of payments (e.g. Monthly)
             interestRate, //annualized interest rate per period * 10000 (e.g. 12 month loan 10% = 83)
@@ -239,19 +233,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function withdrawCollateral(uint256 loanId) external {
         //must be the borrower or operator to withdraw, and loan must be either paid/not initiated
-        require(
-            msg.sender == idToLoan[loanId].borrower,
-            "Invalid user for loanId"
-        );
-        require(
-            idToLoan[loanId].principalRemaining == 0,
-            "Loan is still ongoing"
-        );
+        require(msg.sender == idToLoan[loanId].borrower, "Invalid user");
+        require(idToLoan[loanId].principalRemaining == 0, "Loan ongoing");
         //no need to check if loan is slashed as collateral amont set to 0 on slashing
-        require(
-            idToLoan[loanId].collateralAmount != 0,
-            "No collateral to withdraw"
-        );
+        require(idToLoan[loanId].collateralAmount != 0, "no collateral");
 
         _withdrawFromLendingPool(
             idToLoan[loanId].collateral,
@@ -278,7 +263,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 rewardAmount = aaveRewardController.getUserUnclaimedRewards(
             address(this)
         );
-        require(rewardAmount > 0, "No rewards to withdraw");
+        require(rewardAmount > 0, "no rewards");
         uint256 rewards = aaveRewardController.claimRewards(
             assets,
             rewardAmount,
@@ -300,7 +285,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 feesAccrued = aToken.balanceOf(address(this)) -
             collateralOwed[collateral];
         //ensure there is collateral to collect
-        require(feesAccrued > 0, "No fees have been accrued");
+        require(feesAccrued > 0, "no fees");
         lendingPool.withdraw(collateral, feesAccrued, address(this));
 
         _swapToken(collateral, address(BNPL), 0, feesAccrued);
@@ -391,10 +376,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function collectFees() external {
         //check there are tokens to swap
-        require(
-            IERC20(baseToken).balanceOf(address(this)) > 0,
-            "There are no rewards to collect"
-        );
+        require(IERC20(baseToken).balanceOf(address(this)) > 0, "no rewards");
         //33% to go to operator as baseToken
         uint256 operatorFees = (IERC20(baseToken).balanceOf(address(this))) / 3;
         TransferHelper.safeTransfer(baseToken, operator, operatorFees);
@@ -495,16 +477,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     function initiateUnstake(uint256 _amount) external nonZeroInput(_amount) {
         //operator cannot withdraw unless there are no active loans
         if (msg.sender == operator) {
-            require(
-                currentLoans.length == 0,
-                "Operator can not unbond if there are active loans"
-            );
+            require(currentLoans.length == 0, "active loans");
         }
         //require the user has enough
-        require(
-            stakingShares[msg.sender] >= _amount,
-            "You do not have a large enough balance"
-        );
+        require(stakingShares[msg.sender] >= _amount, "insufficent bal");
         //set the time of the unbond
         unbondTime[msg.sender] = block.timestamp;
         //get the amount of BNPL to issue back
@@ -535,7 +511,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //require a 45,000 block gap (~7 day) gap since unbond initiated
         require(
             block.timestamp >= unbondTime[msg.sender] + 45000,
-            "Unbond period not yet finished"
+            "still unbonding"
         );
         uint256 what = (unbondingShares[msg.sender] * unbondingAmount) /
             totalUnbondingShares;
@@ -561,10 +537,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //require that the given due date and grace period have expired
         require(
             block.timestamp > getNextDueDate(loanId) + gracePeriod,
-            "Time period is not yet expired"
+            "not expired"
         );
         //check loan is not slashed already
-        require(!idToLoan[loanId].isSlashed, "Loan has already been slashed");
+        require(!idToLoan[loanId].isSlashed, "already slashed");
         //get slash % with 10,000 multiplier
         uint256 slashPercent = (10000 * idToLoan[loanId].principalRemaining) /
             getTotalAssetValue();
@@ -604,7 +580,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function sellSlashed(uint256 minOut) external {
         //ensure there is a balance to sell
-        require(slashingBalance > 0, "There is no slashing balance to sell");
+        require(slashingBalance > 0, "no balance");
         //As BNPL-ETH Pair is the most liquid, goes BNPL > ETH > baseToken
         uint256 baseTokenOut = _swapToken(
             BNPL,
@@ -700,14 +676,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Whitelist a given list of addresses
+     * Whitelist or delist a given list of addresses
      */
-    function whitelistAddresses(address[] memory whitelistAddition)
-        external
-        operatorOnly
-    {
+    function whitelistAddresses(
+        address[] memory whitelistAddition,
+        bool _status
+    ) external operatorOnly {
         for (uint256 i; i < whitelistAddition.length; i++) {
-            whitelistedAddresses[whitelistAddition[i]] = true;
+            whitelistedAddresses[whitelistAddition[i]] = _status;
         }
     }
 
@@ -773,7 +749,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             path
         );
         //ensure slippage
-        require(amounts[2] >= minOut, "Insufficient output");
+        require(amounts[2] >= minOut, "insufficient out");
         TransferHelper.safeTransfer(
             tokenIn,
             UniswapV2Library.pairFor(uniswapFactory, tokenIn, path[1]),
