@@ -789,7 +789,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Gets the given users balance in baseToken
      */
-    function getBaseTokenBalance(address user) public view returns (uint256) {
+    function getBaseTokenBalance(address user) external view returns (uint256) {
         if (totalSupply() == 0) {
             return 0;
         }
