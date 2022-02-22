@@ -60,7 +60,7 @@ def test_banking_node_collateral_loan():
     assert node.getBNPLBalance(account) == BOND_AMOUNT
 
     # Unbond and redeposit for future unbonding checks
-    node.initiateUnstake(BOND_AMOUNT / 2, {"from": account, "gas_limit": 1000000})
+    node.initiateUnstake(BOND_AMOUNT / 2, {"from": account})
     approve_erc20(BOND_AMOUNT / 2, node_address, bnpl, account)
     node.stake(BOND_AMOUNT / 2, {"from": account})
 
@@ -133,11 +133,13 @@ def test_banking_node_collateral_loan():
     assert node.getPendingRequestCount() == 2
 
     # Test Clear pending loans
-    node.clearPendingLoans({"from": account})
+    tx = node.clearPendingLoans({"from": account})
+    tx.wait(1)
     assert node.getPendingRequestCount() == 0
 
     # Check collateral can be withdrawn
-    node.withdrawCollateral(loan_id_collateral, {"from": account2})
+    tx = node.withdrawCollateral(loan_id_collateral, {"from": account2})
+    tx.wait(1)
 
     assert busd.balanceOf(account2) == initial_busd_balance
     assert node.collateralOwed(busd_address) < COLLAT_AMOUNT * 0.01

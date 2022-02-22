@@ -96,7 +96,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     modifier ensureNodeActive() {
         if (msg.sender != bnplFactory && msg.sender != operator) {
             require(
-                getBNPLBalance(operator) >= 1500000 * 10**18,
+                //requires banking node to have 15m bnpl
+                getBNPLBalance(operator) >= 0x13DA329B6336471800000,
                 "Banking node is currently not active"
             );
             if (requireKYC) {

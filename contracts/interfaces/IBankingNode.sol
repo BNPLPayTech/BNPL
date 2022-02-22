@@ -82,6 +82,8 @@ interface IBankingNode {
 
     //View functions
 
+    function getStakedBNPL() external view returns (uint256);
+
     function getBaseTokenBalance(address user) external view returns (uint256);
 
     function getBNPLBalance(address user) external view returns (uint256 what);

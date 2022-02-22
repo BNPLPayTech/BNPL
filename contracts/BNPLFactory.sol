@@ -42,14 +42,16 @@ contract BNPLFactory is Ownable {
         uint256 _gracePeriod
     ) external returns (address node) {
         //collect the 2M BNPL
+        uint256 bondAmount = 2000000 * 10**18; //2M BNPL to bond a node
         TransferHelper.safeTransferFrom(
             BNPL,
             msg.sender,
             address(this),
-            2000000 * 10**18
+            bondAmount
         );
-        //require base token to be approve
-        require(approvedBaseTokens[_baseToken]);
+        //one node per operator and base token must be approved
+        require(approvedBaseTokens[_baseToken], "invalid base token");
+        require(operatorToNode[msg.sender] == address(0));
         //create a new node
         bytes memory bytecode = type(BankingNode).creationCode;
         bytes32 salt = keccak256(
@@ -70,8 +72,8 @@ contract BNPLFactory is Ownable {
             aaveDistributionController,
             uniswapFactory
         );
-        TransferHelper.safeApprove(BNPL, node, 2000000 * 10**18);
-        BankingNode(node).stake(2000000 * 10**18);
+        TransferHelper.safeApprove(BNPL, node, bondAmount);
+        BankingNode(node).stake(bondAmount);
         bankingNodesList.push(node);
         operatorToNode[msg.sender] = node;
     }
