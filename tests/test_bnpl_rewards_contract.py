@@ -113,10 +113,12 @@ def test_rewards_contract():
     # Add the two valid lp address
     tx = rewards_controller.add(busd_node_address, True, {"from": account2})
     tx.wait(1)
+    assert rewards_controller.poolLength() == 1
     tx = rewards_controller.add(usdt_node_address, False, {"from": account})
     tx.wait(1)
     tx = rewards_controller.set(1, {"from": account})
     tx.wait(1)
+    assert rewards_controller.poolLength() == 2
 
     deposit_amount = BUSD_AMOUNT * 0.99
     # Deposit the LP tokens to start accrueing rewards

@@ -193,7 +193,7 @@ contract BNPLRewardsController is Ownable {
         uint256 pending = ((user.amount * pool.accBnplPerShare) / 1e12) -
             user.rewardDebt;
 
-        user.amount += _amount;
+        user.amount -= _amount;
         user.rewardDebt = (user.amount * pool.accBnplPerShare) / 1e12;
 
         if (pending > 0) {
