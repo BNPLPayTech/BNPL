@@ -174,6 +174,7 @@ def test_banking_node_collateral_loan():
 
     loan_id_collateral = node.pendingRequests(0)
     loan_id_slashing = node.pendingRequests(1)
+    assert node.getPendingRequestCount() == 2
 
     # Check that the loan can not be approved as there is not enough liquidity
     with pytest.raises(Exception):
@@ -193,8 +194,14 @@ def test_banking_node_collateral_loan():
     with pytest.raises(Exception):
         tx = node.slashLoan(loan_id_collateral, 0, {"from": account})
 
+    print(node.idToLoan(loan_id_collateral))
+
     # Approve collateral loan
-    tx = node.approveLoan(loan_id_collateral, 0, {"from": account})
+    tx = node.approveLoan(
+        loan_id_collateral,
+        0,
+        {"from": account, "gas_limit": 800000, "allow_revert": True},
+    )
     tx.wait(1)
 
     # Collateral should not be withdrawable anymore
@@ -276,8 +283,6 @@ def test_banking_node_collateral_loan():
         node.unbondingAmount() >= expected_unbonding_amount * 0.99
         and node.unbondingAmount() <= expected_unbonding_amount * 1.01
     )
-    assert node.totalUnbondingShares() == BOND_AMOUNT / 2
-    assert node.unbondingShares(account) == BOND_AMOUNT / 2
 
     # Sell the slashed balance
     initial_usd_balance = node.getTotalAssetValue()
@@ -323,6 +328,6 @@ def test_banking_node_collateral_loan():
     tx = node.collectCollateralFees(busd_address, {"from": account})
     tx.wait(1)
     assert node.getBNPLBalance(account) > initial_staked_bnpl
-    assert node.getDefaultedLoansCount() == 2
+    assert node.defaultedLoanCount() == 2
     assert node.getCurrentLoansCount() == 0
     assert node.getPendingRequestCount() == 0

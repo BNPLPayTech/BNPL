@@ -6,6 +6,13 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./BankingNode.sol";
 import "./libraries/TransferHelper.sol";
 
+//CUSTOM ERRORS
+
+//occurs when trying to create a node without a whitelisted baseToken
+error InvalidBaseToken();
+//occurs when a user tries to set up a second node from same account
+error OneNodePerAccountOnly();
+
 contract BNPLFactory is Ownable {
     mapping(address => address) public operatorToNode;
     address[] public bankingNodesList;
@@ -50,8 +57,12 @@ contract BNPLFactory is Ownable {
             bondAmount
         );
         //one node per operator and base token must be approved
-        require(approvedBaseTokens[_baseToken], "invalid token");
-        require(operatorToNode[msg.sender] == address(0), "1 node only");
+        if (!approvedBaseTokens[_baseToken]) {
+            revert InvalidBaseToken();
+        }
+        if (operatorToNode[msg.sender] != address(0)) {
+            revert OneNodePerAccountOnly();
+        }
         //create a new node
         bytes memory bytecode = type(BankingNode).creationCode;
         bytes32 salt = keccak256(
