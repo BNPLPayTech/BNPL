@@ -4,6 +4,10 @@ pragma solidity ^0.8.0;
 import "./BNPLFactory.sol";
 import "./interfaces/IBankingNode.sol";
 
+error InvalidToken();
+error InsufficientBalance(uint256 userBalance);
+error PoolExists();
+
 /**
  * Modified version of Sushiswap MasterChef.sol contract
  * - Migrator functionality removed
@@ -11,7 +15,8 @@ import "./interfaces/IBankingNode.sol";
  * - Adding LP token is public instead of onlyOwner, but requires the LP token to be saved to bnplFactory
  * - Alloc points are based on amount of BNPL staked to the node
  * - Minting functions for BNPL not possible, they are transfered from treasury instead
- / - Removed safeMath as using solidity ^0.8.0
+ * - Removed safeMath as using solidity ^0.8.0
+ * - Require checks changed to custom errors to save gas
  */
 
 contract BNPLRewardsController is Ownable {
@@ -68,7 +73,9 @@ contract BNPLRewardsController is Ownable {
      * _allocPoints to be based on the number of bnpl staked in the given node
      */
     function add(IBankingNode _lpToken, bool _withUpdate) public {
-        require(isValidNode(address(_lpToken)), "invalid token");
+        if (!isValidNode(address(_lpToken))) {
+            revert InvalidToken();
+        }
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -184,7 +191,9 @@ contract BNPLRewardsController is Ownable {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
 
-        require(user.amount >= _amount, "insuffi bal");
+        if (_amount > user.amount) {
+            revert InsufficientBalance(user.amount);
+        }
 
         updatePool(_pid);
 
@@ -281,7 +290,9 @@ contract BNPLRewardsController is Ownable {
     function checkForDuplicate(IBankingNode _lpToken) internal view {
         uint256 length = poolInfo.length;
         for (uint256 i = 0; i < length; i++) {
-            require(poolInfo[i].lpToken != _lpToken, "pool exists");
+            if (poolInfo[i].lpToken == _lpToken) {
+                revert PoolExists();
+            }
         }
     }
 
