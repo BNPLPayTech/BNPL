@@ -5,7 +5,7 @@ import "./BNPLFactory.sol";
 import "./interfaces/IBankingNode.sol";
 
 error InvalidToken();
-error InsufficientBalance(uint256 userBalance);
+error InsufficientUserBalance(uint256 userBalance);
 error PoolExists();
 
 /**
@@ -192,7 +192,7 @@ contract BNPLRewardsController is Ownable {
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         if (_amount > user.amount) {
-            revert InsufficientBalance(user.amount);
+            revert InsufficientUserBalance(user.amount);
         }
 
         updatePool(_pid);
@@ -247,6 +247,8 @@ contract BNPLRewardsController is Ownable {
      */
     function updateRewards(uint256 _bnplPerSecond) public onlyOwner {
         bnplPerSecond = _bnplPerSecond;
+
+        massUpdatePools();
     }
 
     /**

@@ -316,6 +316,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 rewardAmount = aaveRewardController.getUserUnclaimedRewards(
             address(this)
         );
+        address _treasuy = treasury;
         if (rewardAmount == 0) {
             revert ZeroInput();
         }
@@ -323,7 +324,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 rewards = aaveRewardController.claimRewards(
             assets,
             rewardAmount,
-            treasury
+            _treasuy
         );
 
         emit aaveRewardsCollected(rewardAmount);
@@ -335,13 +336,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     function collectCollateralFees(address collateral) external {
         //get the aToken address
         ILendingPool lendingPool = _getLendingPool();
+        address _bnpl = BNPL;
         uint256 feesAccrued = IERC20(
             lendingPool.getReserveData(collateral).aTokenAddress
         ).balanceOf(address(this)) - collateralOwed[collateral];
         //ensure there is collateral to collect inside of _swap
         lendingPool.withdraw(collateral, feesAccrued, address(this));
         //no slippage for small swaps
-        _swapToken(collateral, BNPL, 0, feesAccrued);
+        _swapToken(collateral, _bnpl, 0, feesAccrued);
     }
 
     /*
@@ -355,6 +357,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 paymentAmount = getNextPayment(loanId);
         uint256 interestPortion = (loan.principalRemaining *
             loan.interestRate) / 10000;
+        address _baseToken = baseToken;
         //reduce accounts receiveable and loan principal if principal + interest payment
         bool finalPayment = loan.paymentsMade + 1 == loan.numberOfPayments;
         if (!loan.interestOnly) {
@@ -370,14 +373,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         //make payment
         TransferHelper.safeTransferFrom(
-            baseToken,
+            _baseToken,
             msg.sender,
             address(this),
             paymentAmount
         );
         //deposit the tokens into AAVE on behalf of the pool contract, withholding 30% and the interest as baseToken
         uint256 interestWithheld = (interestPortion * 3) / 10;
-        _depositToLendingPool(baseToken, paymentAmount - interestWithheld);
+        _depositToLendingPool(_baseToken, paymentAmount - interestWithheld);
         //remove if final payment
         if (finalPayment) {
             _removeCurrentLoan(loanId);
@@ -400,15 +403,16 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //make a payment of remaining principal + 1 period of interest
         uint256 interestAmount = (principalLeft * loan.interestRate) / 10000;
         uint256 paymentAmount = principalLeft + interestAmount;
+        address _baseToken = baseToken;
         //make payment
         TransferHelper.safeTransferFrom(
-            baseToken,
+            _baseToken,
             msg.sender,
             address(this),
             paymentAmount
         );
         uint256 interestWithheld = (interestAmount * 3) / 10;
-        _depositToLendingPool(baseToken, paymentAmount - interestWithheld);
+        _depositToLendingPool(_baseToken, paymentAmount - interestWithheld);
 
         //update accounts
         accountsReceiveable -= principalLeft;
@@ -427,15 +431,18 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     function collectFees() external {
         //requirement check for nonzero inside of _swap
         //33% to go to operator as baseToken
-        uint256 operatorFees = IERC20(baseToken).balanceOf(address(this)) / 3;
-        TransferHelper.safeTransfer(baseToken, operator, operatorFees);
+        address _baseToken = baseToken;
+        address _bnpl = BNPL;
+        address _operator = operator;
+        uint256 operatorFees = IERC20(_baseToken).balanceOf(address(this)) / 3;
+        TransferHelper.safeTransfer(_baseToken, _operator, operatorFees);
         //remainder (67%) is traded for staking rewards
         //no need for slippage on small trade
         uint256 stakingRewards = _swapToken(
-            baseToken,
-            BNPL,
+            _baseToken,
+            _bnpl,
             0,
-            IERC20(baseToken).balanceOf(address(this))
+            IERC20(_baseToken).balanceOf(address(this))
         );
         emit feesCollected(operatorFees, stakingRewards);
     }
@@ -450,8 +457,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         nonZeroInput(_amount)
     {
         //check the decimals of the baseTokens
+        address _baseToken = baseToken;
         uint256 decimalAdjust = 1;
-        uint256 tokenDecimals = ERC20(baseToken).decimals();
+        uint256 tokenDecimals = ERC20(_baseToken).decimals();
         if (tokenDecimals != 18) {
             decimalAdjust = 10**(18 - tokenDecimals);
         }
@@ -465,14 +473,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         //transfer tokens from the user and mint
         TransferHelper.safeTransferFrom(
-            baseToken,
+            _baseToken,
             msg.sender,
             address(this),
             _amount
         );
         _mint(msg.sender, what);
 
-        _depositToLendingPool(baseToken, _amount);
+        _depositToLendingPool(_baseToken, _amount);
 
         emit baseTokenDeposit(msg.sender, _amount);
     }
@@ -486,8 +494,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //req check for user already in _burn function
         //safe div, if _amount > 0, asset value always >0;
         uint256 what = (_amount * totalSupply()) / getTotalAssetValue();
+        address _baseToken = baseToken;
         _burn(msg.sender, what);
-        _withdrawFromLendingPool(baseToken, _amount, msg.sender);
+        _withdrawFromLendingPool(_baseToken, _amount, msg.sender);
 
         emit baseTokenWithdrawn(msg.sender, _amount);
     }
@@ -507,18 +516,20 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         //calcualte the number of shares to give
         uint256 what = _amount;
-        if (totalStakingShares != 0) {
+        uint256 _totalStakingShares = totalStakingShares;
+        if (_totalStakingShares > 0) {
             //edge case - if totalStakingShares != 0, but all bnpl has been slashed:
             //node will require a donation to work again
             uint256 totalStakedBNPL = getStakedBNPL();
             if (totalStakedBNPL == 0) {
                 revert DonationRequired();
             }
-            what = (_amount * totalStakingShares) / totalStakedBNPL;
+            what = (_amount * _totalStakingShares) / totalStakedBNPL;
         }
         //collect the BNPL
+        address _bnpl = BNPL;
         TransferHelper.safeTransferFrom(
-            BNPL,
+            _bnpl,
             msg.sender,
             address(this),
             _amount
@@ -537,7 +548,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function initiateUnstake(uint256 _amount) external nonZeroInput(_amount) {
         //operator cannot withdraw unless there are no active loans
-        if (msg.sender == operator && currentLoans.length > 0) {
+        address _operator = operator;
+        if (msg.sender == _operator && currentLoans.length > 0) {
             revert ActiveLoansOngoing();
         }
         //require the user has enough
@@ -554,11 +566,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         totalStakingShares -= _amount;
         //initiate as 1:1 for unbonding shares with BNPL sent
         uint256 newUnbondingShares = what;
+        uint256 _unbondingAmount = unbondingAmount;
         //update amount if there is a pool of unbonding
-        if (unbondingAmount != 0) {
+        if (_unbondingAmount != 0) {
             newUnbondingShares =
                 (what * totalUnbondingShares) /
-                unbondingAmount;
+                _unbondingAmount;
         }
         //add the balance to their unbonding
         unbondingShares[msg.sender] += newUnbondingShares;
@@ -630,6 +643,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 collateralPosted = loan.collateralAmount;
         if (collateralPosted > 0) {
             address collateral = loan.collateral;
+            address _baseToken = baseToken;
             _withdrawFromLendingPool(
                 collateral,
                 collateralPosted,
@@ -637,11 +651,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             );
             uint256 baseTokenOut = _swapToken(
                 collateral,
-                baseToken,
+                _baseToken,
                 minOut,
                 collateralPosted
             );
-            _depositToLendingPool(baseToken, baseTokenOut);
+            _depositToLendingPool(_baseToken, baseTokenOut);
             //update collateral info
             collateralOwed[collateral] -= collateralPosted;
             loan.collateralAmount = 0;
@@ -656,17 +670,20 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     function sellSlashed(uint256 minOut) external {
         //ensure there is a balance to sell (moved to inside _swap)
         //As BNPL-ETH Pair is the most liquid, goes BNPL > ETH > baseToken
+        address _baseToken = baseToken;
+        address _bnpl = BNPL;
+        uint256 _slashingBalance = slashingBalance;
         uint256 baseTokenOut = _swapToken(
-            BNPL,
-            baseToken,
+            _bnpl,
+            _baseToken,
             minOut,
-            slashingBalance
+            _slashingBalance
         );
         slashingBalance = 0;
         //deposit the baseToken into AAVE
-        _depositToLendingPool(baseToken, baseTokenOut);
+        _depositToLendingPool(_baseToken, baseTokenOut);
 
-        emit slashingSale(slashingBalance, baseTokenOut);
+        emit slashingSale(_slashingBalance, baseTokenOut);
     }
 
     /**
@@ -674,14 +691,16 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * BNPL can be donated by simply sending it to the contract
      */
     function donateBaseToken(uint256 _amount) external nonZeroInput(_amount) {
+        address _baseToken = baseToken;
+
         TransferHelper.safeTransferFrom(
-            baseToken,
+            _baseToken,
             msg.sender,
             address(this),
             _amount
         );
         //add donation to AAVE
-        _depositToLendingPool(baseToken, _amount);
+        _depositToLendingPool(_baseToken, _amount);
 
         emit baseTokensDonated(_amount);
     }
@@ -697,7 +716,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         operatorOnly
     {
         Loan storage loan = idToLoan[loanId];
-        if (getBNPLBalance(operator) < 0x13DA329B6336471800000) {
+        address _operator = operator;
+        if (getBNPLBalance(_operator) < 0x13DA329B6336471800000) {
             revert NodeInactive();
         }
         //ensure the loan was never started
@@ -726,10 +746,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         accountsReceiveable += loanSize;
         //send the funds and update accounts (minus 0.75% origination fee)
         ILendingPool lendingPool = _getLendingPool();
-        lendingPool.withdraw(baseToken, (loanSize * 397) / 400, loan.borrower);
+        address _baseToken = baseToken;
+        lendingPool.withdraw(_baseToken, (loanSize * 397) / 400, loan.borrower);
         //send the 0.5% origination fee to treasury and agent
-        lendingPool.withdraw(baseToken, loanSize / 200, treasury);
-        lendingPool.withdraw(baseToken, loanSize / 400, loanToAgent[loanId]);
+        lendingPool.withdraw(_baseToken, loanSize / 200, treasury);
+        lendingPool.withdraw(_baseToken, loanSize / 400, loanToAgent[loanId]);
 
         emit approvedLoan(loanId);
     }
@@ -807,6 +828,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (amountIn == 0) {
             revert ZeroInput();
         }
+        address _uniswapFactory = uniswapFactory;
         address[] memory path = new address[](3);
         path[0] = tokenIn;
         path[1] = WETH;
@@ -822,7 +844,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         TransferHelper.safeTransfer(
             tokenIn,
-            UniswapV2Library.pairFor(uniswapFactory, tokenIn, path[1]),
+            UniswapV2Library.pairFor(_uniswapFactory, tokenIn, path[1]),
             amounts[0]
         );
         // **** SWAP ****
@@ -836,10 +858,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
                 ? (uint256(0), amountOut)
                 : (amountOut, uint256(0));
             address to = i < 1
-                ? UniswapV2Library.pairFor(uniswapFactory, output, path[2])
+                ? UniswapV2Library.pairFor(_uniswapFactory, output, path[2])
                 : address(this);
             IUniswapV2Pair(
-                UniswapV2Library.pairFor(uniswapFactory, input, output)
+                UniswapV2Library.pairFor(_uniswapFactory, input, output)
             ).swap(amount0Out, amount1Out, to, new bytes(0));
         }
         return amounts[2];
@@ -873,10 +895,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function getBNPLBalance(address user) public view returns (uint256 what) {
         uint256 balance = stakingShares[user];
-        if (balance == 0 || totalStakingShares == 0) {
+        uint256 _totalStakingShares = totalStakingShares;
+        if (balance == 0 || _totalStakingShares == 0) {
             what = 0;
         } else {
-            what = (balance * getStakedBNPL()) / totalStakingShares;
+            what = (balance * getStakedBNPL()) / _totalStakingShares;
         }
     }
 
@@ -902,17 +925,19 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         // interest rate per period (31536000 seconds in a year)
         uint256 interestRatePerPeriod = loan.interestRate;
+        uint256 _loanAmount = loan.loanAmount;
+        uint256 _numberOfPayments = loan.numberOfPayments;
         //check if it is an interest only loan
         if (loan.interestOnly) {
             //check if its the final payment
-            if (loan.paymentsMade + 1 == loan.numberOfPayments) {
+            if (loan.paymentsMade + 1 == _numberOfPayments) {
                 //if final payment, then principal + final interest amount
                 return
-                    loan.loanAmount +
-                    ((loan.loanAmount * interestRatePerPeriod) / 10000);
+                    _loanAmount +
+                    ((_loanAmount * interestRatePerPeriod) / 10000);
             } else {
                 //if not final payment, simple interest amount
-                return (loan.loanAmount * interestRatePerPeriod) / 10000;
+                return (_loanAmount * interestRatePerPeriod) / 10000;
             }
         } else {
             //principal + interest payments, payment given by the formula:
@@ -920,12 +945,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             //i : interest rate per period
             //d : duration
             // p * (i * (1+i) ** d) / ((1+i) ** d - 1)
-            uint256 numerator = loan.loanAmount *
+            uint256 numerator = _loanAmount *
                 interestRatePerPeriod *
-                (10000 + interestRatePerPeriod)**loan.numberOfPayments;
+                (10000 + interestRatePerPeriod)**_numberOfPayments;
             uint256 denominator = (10000 + interestRatePerPeriod) **
-                loan.numberOfPayments -
-                (10**(4 * loan.numberOfPayments));
+                _numberOfPayments -
+                (10**(4 * _numberOfPayments));
             return numerator / (denominator * 10000);
         }
     }
