@@ -50,8 +50,9 @@ contract BNPLFactory is Ownable {
     ) external returns (address node) {
         //collect the 2M BNPL
         uint256 bondAmount = 0x1A784379D99DB42000000; //2M BNPL to bond a node
+        address _bnpl = BNPL;
         TransferHelper.safeTransferFrom(
-            BNPL,
+            _bnpl,
             msg.sender,
             address(this),
             bondAmount
@@ -71,10 +72,9 @@ contract BNPLFactory is Ownable {
         assembly {
             node := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
-
         BankingNode(node).initialize(
             _baseToken,
-            BNPL,
+            _bnpl,
             _requireKYC,
             msg.sender,
             _gracePeriod,
@@ -83,7 +83,7 @@ contract BNPLFactory is Ownable {
             aaveDistributionController,
             uniswapFactory
         );
-        TransferHelper.safeApprove(BNPL, node, bondAmount);
+        TransferHelper.safeApprove(_bnpl, node, bondAmount);
         BankingNode(node).stake(bondAmount);
         bankingNodesList.push(node);
         operatorToNode[msg.sender] = node;
