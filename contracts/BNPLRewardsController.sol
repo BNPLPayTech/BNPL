@@ -145,9 +145,12 @@ contract BNPLRewardsController is Ownable {
 
         //instead of minting, simply transfers the tokens from the owner
         //ensure owner has approved the tokens to the contract
+
+        address _bnpl = bnpl;
+        address _treasury = treasury;
         TransferHelper.safeTransferFrom(
-            bnpl,
-            treasury,
+            _bnpl,
+            _treasury,
             address(this),
             bnplReward
         );
@@ -232,11 +235,12 @@ contract BNPLRewardsController is Ownable {
      * Safe BNPL transfer function, just in case if rounding error causes pool to not have enough BNPL.
      */
     function safeBnplTransfer(address _to, uint256 _amount) internal {
-        uint256 bnplBalance = IERC20(bnpl).balanceOf(address(this));
+        address _bnpl = bnpl;
+        uint256 bnplBalance = IERC20(_bnpl).balanceOf(address(this));
         if (_amount > bnplBalance) {
-            TransferHelper.safeTransfer(bnpl, _to, bnplBalance);
+            TransferHelper.safeTransfer(_bnpl, _to, bnplBalance);
         } else {
-            TransferHelper.safeTransfer(bnpl, _to, _amount);
+            TransferHelper.safeTransfer(_bnpl, _to, _amount);
         }
     }
 
@@ -290,8 +294,7 @@ contract BNPLRewardsController is Ownable {
      * Check if the pool already exists
      */
     function checkForDuplicate(IBankingNode _lpToken) internal view {
-        uint256 length = poolInfo.length;
-        for (uint256 i = 0; i < length; i++) {
+        for (uint256 i = 0; i < poolInfo.length; i++) {
             if (poolInfo[i].lpToken == _lpToken) {
                 revert PoolExists();
             }
@@ -329,9 +332,10 @@ contract BNPLRewardsController is Ownable {
      * Checks if a given address is a valid banking node registered
      */
     function isValidNode(address _bankingNode) private view returns (bool) {
-        uint256 length = bnplFactory.bankingNodeCount();
+        BNPLFactory _bnplFactory = bnplFactory;
+        uint256 length = _bnplFactory.bankingNodeCount();
         for (uint256 i; i < length; i++) {
-            if (bnplFactory.bankingNodesList(i) == _bankingNode) {
+            if (_bnplFactory.bankingNodesList(i) == _bankingNode) {
                 return true;
             }
         }
