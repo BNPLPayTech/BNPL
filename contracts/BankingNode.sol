@@ -135,11 +135,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
 
     /**
      * Ensure a node is active for deposit, stake, and loan approval functions
-     * Require KYC is also batched in for
+     * Require KYC is also batched in
      */
     modifier ensureNodeActive() {
-        if (msg.sender != bnplFactory && msg.sender != operator) {
-            if (getBNPLBalance(operator) < 0x13DA329B6336471800000) {
+        address _operator = operator;
+        if (msg.sender != bnplFactory && msg.sender != _operator) {
+            if (getBNPLBalance(_operator) < 0x13DA329B6336471800000) {
                 revert NodeInactive();
             }
             if (requireKYC && whitelistedAddresses[msg.sender] == false) {
@@ -163,8 +164,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * For operator only functions
      */
     modifier operatorOnly() {
-        if (msg.sender != operator) {
-            revert InvalidUser(operator);
+        address _operator = operator;
+        if (msg.sender != _operator) {
+            revert InvalidUser(_operator);
         }
         _;
     }
@@ -296,9 +298,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             revert LoanStillOngoing();
         }
         //no need to check if loan is slashed as collateral amont set to 0 on slashing
-        if (amount == 0) {
-            revert ZeroInput();
-        }
 
         _withdrawFromLendingPool(collateral, amount, loan.borrower);
 
@@ -358,8 +357,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 interestPortion = (loan.principalRemaining *
             loan.interestRate) / 10000;
         address _baseToken = baseToken;
+        loan.paymentsMade++;
         //reduce accounts receiveable and loan principal if principal + interest payment
-        bool finalPayment = loan.paymentsMade + 1 == loan.numberOfPayments;
+        bool finalPayment = loan.paymentsMade == loan.numberOfPayments;
+
         if (!loan.interestOnly) {
             uint256 principalPortion = paymentAmount - interestPortion;
             loan.principalRemaining -= principalPortion;
@@ -388,7 +389,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             _removeCurrentLoan(loanId);
         }
         //increment the loan status
-        loan.paymentsMade++;
+
         emit loanPaymentMade(loanId);
     }
 
@@ -413,8 +414,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             address(this),
             paymentAmount
         );
-        uint256 interestWithheld = (interestAmount * 3) / 10;
-        _depositToLendingPool(_baseToken, paymentAmount - interestWithheld);
+        //deposit withholding 30% of the interest as fees
+        _depositToLendingPool(
+            _baseToken,
+            paymentAmount - ((interestAmount * 3) / 10)
+        );
 
         //update accounts
         accountsReceiveable -= principalLeft;
@@ -493,7 +497,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * , not BNPL USD to burn
      */
     function withdraw(uint256 _amount) external nonZeroInput(_amount) {
-        //req check for user already in _burn function
+        if (getBaseTokenBalance(msg.sender) < _amount) {
+            revert InsufficientBalance();
+        }
         //safe div, if _amount > 0, asset value always >0;
         uint256 what = (_amount * totalSupply()) / getTotalAssetValue();
         address _baseToken = baseToken;
@@ -731,12 +737,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
 
         //remove from loanRequests and add loan to current loans
-        for (uint256 i = 0; i < pendingRequests.length; i++) {
+        uint256 length = pendingRequests.length;
+        for (uint256 i = 0; i < length; i++) {
             if (loanId == pendingRequests[i]) {
-                pendingRequests[i] = pendingRequests[
-                    pendingRequests.length - 1
-                ];
+                pendingRequests[i] = pendingRequests[length - 1];
                 pendingRequests.pop();
+                break;
             }
         }
         currentLoans.push(loanId);
@@ -766,14 +772,23 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
 
     /**
      * Whitelist or delist a given list of addresses
+     * Only relevant on KYC nodes
      */
     function whitelistAddresses(
         address[] memory whitelistAddition,
         bool _status
     ) external operatorOnly {
-        for (uint256 i; i < whitelistAddition.length; i++) {
+        uint256 length = whitelistAddition.length;
+        for (uint256 i; i < length; i++) {
             whitelistedAddresses[whitelistAddition[i]] = _status;
         }
+    }
+
+    /**
+     * Updates the KYC Status of a node
+     */
+    function setKYC(bool _newStatus) external operatorOnly {
+        requireKYC = _newStatus;
     }
 
     //PRIVATE FUNCTIONS
@@ -797,7 +812,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         address tokenOut,
         uint256 amountOut,
         address to
-    ) private {
+    ) private nonZeroInput(amountOut) {
         _getLendingPool().withdraw(tokenOut, amountOut, to);
     }
 
@@ -816,6 +831,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             if (loanId == currentLoans[i]) {
                 currentLoans[i] = currentLoans[currentLoans.length - 1];
                 currentLoans.pop();
+                return;
             }
         }
     }
@@ -828,14 +844,15 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         address tokenOut,
         uint256 minOut,
         uint256 amountIn
-    ) private returns (uint256) {
+    ) private returns (uint256 tokenOutput) {
         if (amountIn == 0) {
             revert ZeroInput();
         }
         address _uniswapFactory = uniswapFactory;
+        address _weth = WETH;
         address[] memory path = new address[](3);
         path[0] = tokenIn;
-        path[1] = WETH;
+        path[1] = _weth;
         path[2] = tokenOut;
         uint256[] memory amounts = UniswapV2Library.getAmountsOut(
             _uniswapFactory,
@@ -843,13 +860,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             path
         );
         //ensure slippage
-        if (minOut > amounts[2]) {
+        tokenOutput = amounts[2];
+        if (minOut > tokenOutput) {
             revert InsufficentOutput();
         }
         TransferHelper.safeTransfer(
             tokenIn,
-            UniswapV2Library.pairFor(_uniswapFactory, tokenIn, path[1]),
-            amounts[0]
+            UniswapV2Library.pairFor(_uniswapFactory, tokenIn, _weth),
+            amountIn
         );
         // **** SWAP ****
         // Copied directly from UniswapV2Router with minor changes as set path length = 3
@@ -868,7 +886,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
                 UniswapV2Library.pairFor(_uniswapFactory, input, output)
             ).swap(amount0Out, amount1Out, to, new bytes(0));
         }
-        return amounts[2];
     }
 
     //VIEW ONLY FUNCTIONS
@@ -887,7 +904,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Gets the given users balance in baseToken
      */
-    function getBaseTokenBalance(address user) external view returns (uint256) {
+    function getBaseTokenBalance(address user) public view returns (uint256) {
         if (totalSupply() == 0) {
             return 0;
         }

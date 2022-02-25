@@ -115,7 +115,10 @@ def test_banking_node_regular_loan():
         tx = node.deposit(USDT_AMOUNT, {"from": account2})
 
     # Check liquidity can still be withdrawn
-    tx = node.withdraw(USDT_AMOUNT, {"from": account2})
+    user_amount = node.getBaseTokenBalance(account2)
+    assert user_amount > USDT_AMOUNT * 0.99 and user_amount < USDT_AMOUNT * 1.01
+
+    tx = node.withdraw(user_amount, {"from": account2})
     tx.wait(1)
     assert (
         node.getTotalAssetValue() >= USDT_AMOUNT * 1.99999999
