@@ -379,8 +379,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             paymentAmount
         );
         //deposit the tokens into AAVE on behalf of the pool contract, withholding 30% and the interest as baseToken
-        uint256 interestWithheld = (interestPortion * 3) / 10;
-        _depositToLendingPool(_baseToken, paymentAmount - interestWithheld);
+        _depositToLendingPool(
+            _baseToken,
+            paymentAmount - ((interestPortion * 3) / 10)
+        );
         //remove if final payment
         if (finalPayment) {
             _removeCurrentLoan(loanId);
@@ -780,9 +782,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Deposit token onto AAVE lending pool
      */
     function _depositToLendingPool(address tokenIn, uint256 amountIn) private {
-        ILendingPool lendingPool = _getLendingPool();
-        TransferHelper.safeApprove(tokenIn, address(lendingPool), amountIn);
-        lendingPool.deposit(tokenIn, amountIn, address(this), 0);
+        TransferHelper.safeApprove(
+            tokenIn,
+            address(_getLendingPool()),
+            amountIn
+        );
+        _getLendingPool().deposit(tokenIn, amountIn, address(this), 0);
     }
 
     /**
@@ -793,8 +798,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 amountOut,
         address to
     ) private {
-        ILendingPool lendingPool = _getLendingPool();
-        lendingPool.withdraw(tokenOut, amountOut, to);
+        _getLendingPool().withdraw(tokenOut, amountOut, to);
     }
 
     /**
@@ -834,7 +838,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         path[1] = WETH;
         path[2] = tokenOut;
         uint256[] memory amounts = UniswapV2Library.getAmountsOut(
-            uniswapFactory,
+            _uniswapFactory,
             amountIn,
             path
         );
@@ -907,10 +911,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Get the amount a user has that is being unbonded
      */
     function getUnbondingBalance(address user) external view returns (uint256) {
-        if (totalUnbondingShares == 0) {
+        uint256 _totalUnbondingShares;
+        if (_totalUnbondingShares == 0) {
             return 0;
         }
-        return (unbondingShares[user] * unbondingAmount) / totalUnbondingShares;
+        return
+            (unbondingShares[user] * unbondingAmount) / _totalUnbondingShares;
     }
 
     /**
@@ -923,8 +929,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (loan.principalRemaining == 0) {
             return 0;
         }
-        // interest rate per period (31536000 seconds in a year)
-        uint256 interestRatePerPeriod = loan.interestRate;
+        uint256 _interestRate = loan.interestRate;
         uint256 _loanAmount = loan.loanAmount;
         uint256 _numberOfPayments = loan.numberOfPayments;
         //check if it is an interest only loan
@@ -932,12 +937,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             //check if its the final payment
             if (loan.paymentsMade + 1 == _numberOfPayments) {
                 //if final payment, then principal + final interest amount
-                return
-                    _loanAmount +
-                    ((_loanAmount * interestRatePerPeriod) / 10000);
+                return _loanAmount + ((_loanAmount * _interestRate) / 10000);
             } else {
                 //if not final payment, simple interest amount
-                return (_loanAmount * interestRatePerPeriod) / 10000;
+                return (_loanAmount * _interestRate) / 10000;
             }
         } else {
             //principal + interest payments, payment given by the formula:
@@ -946,10 +949,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             //d : duration
             // p * (i * (1+i) ** d) / ((1+i) ** d - 1)
             uint256 numerator = _loanAmount *
-                interestRatePerPeriod *
-                (10000 + interestRatePerPeriod)**_numberOfPayments;
-            uint256 denominator = (10000 + interestRatePerPeriod) **
-                _numberOfPayments -
+                _interestRate *
+                (10000 + _interestRate)**_numberOfPayments;
+            uint256 denominator = (10000 + _interestRate)**_numberOfPayments -
                 (10**(4 * _numberOfPayments));
             return numerator / (denominator * 10000);
         }
