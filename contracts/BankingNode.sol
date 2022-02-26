@@ -109,7 +109,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     //EVENTS
-    event LoanRequest(uint256 loanId);
+    event LoanRequest(uint256 loanId, string message);
     event collateralWithdrawn(
         uint256 loanId,
         address collateral,
@@ -295,7 +295,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //save the agent of the loan
         loanToAgent[requestId] = agent;
 
-        emit LoanRequest(requestId);
+        emit LoanRequest(requestId, message);
     }
 
     /**
