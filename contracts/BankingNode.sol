@@ -338,6 +338,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Collect the interest earnt on collateral posted to distribute to stakers
      */
     function collectCollateralFees(address collateral) external {
+        //cannot be base token
+        if (collateral == baseToken) {
+            revert InvalidCollateral();
+        }
         //get the aToken address
         ILendingPool lendingPool = _getLendingPool();
         address _bnpl = BNPL;
