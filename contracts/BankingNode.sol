@@ -45,6 +45,8 @@ error LoanNotExpired();
 error LoanAlreadySlashed();
 //occurs if trying to withdraw staked BNPL where 7 day unbonding hasnt passed
 error LoanStillUnbonding();
+//occurs if trying to post baseToken as collateral
+error InvalidCollateral();
 
 contract BankingNode is ERC20("BNPL USD", "bUSD") {
     //Node specific variables
@@ -76,7 +78,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     //For Staking, Slashing and Balances
     uint256 public accountsReceiveable;
     mapping(address => bool) public whitelistedAddresses;
-    mapping(address => uint256) public unbondTime;
+    mapping(address => uint256) public unbondBlock;
     mapping(uint256 => address) public loanToAgent;
     uint256 public slashingBalance;
     //can be private as there is a getter function for staking balance
@@ -261,9 +263,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             collateralAmount,
             false
         );
-
         //post the collateral if any
         if (collateralAmount > 0) {
+            //cannot be the smae as base token
+            if (collateral == baseToken) {
+                revert InvalidCollateral();
+            }
             //update the collateral owed (interest accrued on collateral is given to lend)
             collateralOwed[collateral] += collateralAmount;
             TransferHelper.safeTransferFrom(
@@ -565,7 +570,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             revert InsufficientBalance();
         }
         //set the time of the unbond
-        unbondTime[msg.sender] = block.timestamp;
+        unbondBlock[msg.sender] = block.number;
         //get the amount of BNPL to issue back
         //safe div: if user staking shares >0, totalStakingShares always > 0
         uint256 what = (_amount * getStakedBNPL()) / totalStakingShares;
@@ -597,8 +602,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (userAmount == 0) {
             revert ZeroInput();
         }
-        //require a 604,800 second gap (7 day) gap since unbond initiated
-        if (block.timestamp < unbondTime[msg.sender] + 604800) {
+        //assuming 13s block, 46523 blocks for 1 week
+        if (block.timestamp < unbondBlock[msg.sender] + 46523) {
             revert LoanStillUnbonding();
         }
         //safe div: if user amount > 0, then totalUnbondingShares always > 0
