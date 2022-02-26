@@ -81,14 +81,14 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     mapping(address => uint256) public unbondBlock;
     mapping(uint256 => address) public loanToAgent;
     uint256 public slashingBalance;
+    mapping(address => uint256) public stakingShares;
     //can be private as there is a getter function for staking balance
-    mapping(address => uint256) private stakingShares;
     uint256 private totalStakingShares;
 
     uint256 public unbondingAmount;
+    mapping(address => uint256) public unbondingShares;
     //can be private as there is getter function for unbonding balance
     uint256 private totalUnbondingShares;
-    mapping(address => uint256) private unbondingShares;
 
     //For Collateral in loans
     mapping(address => uint256) public collateralOwed;
@@ -122,12 +122,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     event baseTokenWithdrawn(address user, uint256 amount);
     event feesCollected(uint256 operatorFees, uint256 stakerFees);
     event baseTokensDonated(uint256 amount);
-    event aaveRewardsCollected(uint256 amount);
     event loanSlashed(uint256 loanId);
     event slashingSale(uint256 bnplSold, uint256 baseTokenRecovered);
-    event bnplStaked(address user, uint256 bnplWithdrawn);
+    event bnplStaked(address user, uint256 bnplStaked);
     event unbondingInitiated(address user, uint256 unbondAmount);
     event bnplWithdrawn(address user, uint256 bnplWithdrawn);
+    event KYCRequirementChanged(bool newStatus);
 
     constructor() {
         bnplFactory = msg.sender;
@@ -136,7 +136,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     // MODIFIERS
 
     /**
-     * Ensure a node is active for deposit, stake, and loan approval functions
+     * Ensure a node is active for deposit, stake functions
      * Require KYC is also batched in
      */
     modifier ensureNodeActive() {
@@ -183,6 +183,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         _;
     }
 
+    /**
+     * Ensures collateral is not the baseToken
+     */
     modifier nonBaseToken(address collateral) {
         if (collateral == baseToken) {
             revert InvalidCollateral();
@@ -234,6 +237,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Request a loan from the banking node
      * Saves the loan with the operator able to approve or reject
      * Can post collateral if chosen, collateral accepted is anything that is accepted by aave
+     * Collateral can not be the same token as baseToken
      */
     function requestLoan(
         uint256 loanAmount,
@@ -311,7 +315,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             revert LoanStillOngoing();
         }
         //no need to check if loan is slashed as collateral amont set to 0 on slashing
-
         _withdrawFromLendingPool(collateral, amount, loan.borrower);
 
         //update the amounts
@@ -333,17 +336,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             revert ZeroInput();
         }
         //claim rewards to the treasury
-        uint256 rewards = aaveRewardController.claimRewards(
-            assets,
-            rewardAmount,
-            _treasuy
-        );
-
-        emit aaveRewardsCollected(rewardAmount);
+        aaveRewardController.claimRewards(assets, rewardAmount, _treasuy);
+        //no need for event as its a function that will only be used by treasury
     }
 
     /**
      * Collect the interest earnt on collateral posted to distribute to stakers
+     * Collateral can not be the same as baseToken
      */
     function collectCollateralFees(address collateral)
         external
@@ -520,6 +519,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 what = (_amount * totalSupply()) / getTotalAssetValue();
         address _baseToken = baseToken;
         _burn(msg.sender, what);
+        //non-zero revert with checked in "_withdrawFromLendingPool"
         _withdrawFromLendingPool(_baseToken, _amount, msg.sender);
 
         emit baseTokenWithdrawn(msg.sender, _amount);
@@ -607,6 +607,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
 
     /**
      * Withdraw BNPL from a bond once unbond period ends
+     * Unbonding period is 46523 blocks (~7 days assuming a 13s avg. block time)
      */
     function unstake() external {
         uint256 userAmount = unbondingShares[msg.sender];
@@ -614,7 +615,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             revert ZeroInput();
         }
         //assuming 13s block, 46523 blocks for 1 week
-        if (block.timestamp < unbondBlock[msg.sender] + 46523) {
+        if (block.number < unbondBlock[msg.sender] + 46523) {
             revert LoanStillUnbonding();
         }
         //safe div: if user amount > 0, then totalUnbondingShares always > 0
@@ -631,8 +632,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Declare a loan defaulted and slash the loan
      * Can be called by anyone
-     * Move BNPL to a slashing balance, to be market sold in seperate function to prevent minOut failure
-     * minOut used for slashing sale, if no collateral, put 0
+     * Move BNPL to a slashing balance, to be sold in seperate function
+     * minOut used for sale of collateral, if no collateral, put 0
      */
     function slashLoan(uint256 loanId, uint256 minOut)
         external
@@ -688,7 +689,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Sell the slashing balance of BNPL to give to lenders as aUSD
+     * Sell the slashing balance of BNPL to give to lenders as <aBaseToken>
      * Slashing sale moved to seperate function to simplify logic with minOut
      */
     function sellSlashed(uint256 minOut) external {
@@ -805,12 +806,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function setKYC(bool _newStatus) external operatorOnly {
         requireKYC = _newStatus;
+        emit KYCRequirementChanged(_newStatus);
     }
 
     //PRIVATE FUNCTIONS
 
     /**
-     * Deposit token onto AAVE lending pool
+     * Deposit token onto AAVE lending pool, receiving aTokens in return
      */
     function _depositToLendingPool(address tokenIn, uint256 amountIn) private {
         TransferHelper.safeApprove(
@@ -822,7 +824,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Withdraw token from AAVE lending pool
+     * Withdraw token from AAVE lending pool, converting from aTokens to ERC20 equiv
      */
     function _withdrawFromLendingPool(
         address tokenOut,
@@ -840,7 +842,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Remove current Loan
+     * Remove given loan from current loan list
      */
     function _removeCurrentLoan(uint256 loanId) private {
         for (uint256 i = 0; i < currentLoans.length; i++) {
@@ -853,7 +855,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     }
 
     /**
-     * Swaps token for BNPL, as BNPL-ETH is the only liquid pair, always goes through tokenIn > ETH > tokenOut
+     * Swaps given token, with path of length 3, tokenIn => WETH => tokenOut
+     * Uses Sushiswap pairs only
+     * Ensures slippage with minOut
      */
     function _swapToken(
         address tokenIn,
@@ -864,51 +868,69 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (amountIn == 0) {
             revert ZeroInput();
         }
+        //Step 1. load data to local variables
         address _uniswapFactory = uniswapFactory;
         address _weth = WETH;
-        address[] memory path = new address[](3);
-        path[0] = tokenIn;
-        path[1] = _weth;
-        path[2] = tokenOut;
-        uint256[] memory amounts = UniswapV2Library.getAmountsOut(
+        address pair1 = UniswapV2Library.pairFor(
             _uniswapFactory,
-            amountIn,
-            path
+            tokenIn,
+            _weth
         );
-        //ensure slippage
-        tokenOutput = amounts[2];
+        address pair2 = UniswapV2Library.pairFor(
+            _uniswapFactory,
+            _weth,
+            tokenOut
+        );
+        //Step 2. transfer the tokens to first pair
+        TransferHelper.safeTransfer(tokenIn, pair1, amountIn);
+        //Step 3. Swap tokenIn to WETH
+        tokenOutput = _swap(tokenIn, _weth, amountIn, pair1, pair2);
+        //Step 4. Swap ETH for tokenOut
+        tokenOutput = _swap(_weth, tokenOut, tokenOutput, pair2, address(this));
+        //Step 5. Check slippage parameters
         if (minOut > tokenOutput) {
             revert InsufficentOutput();
         }
-        TransferHelper.safeTransfer(
+    }
+
+    /**
+     * Helper function for _swapToken
+     * Modified from uniswap router to save gas, makes a single trade
+     * with uniswap pair without needing address[] path or uit256[] amounts
+     */
+    function _swap(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        address pair,
+        address to
+    ) private returns (uint256 tokenOutput) {
+        //Step 1. get the reserves of each token
+        (uint256 reserveIn, uint256 reserveOut) = UniswapV2Library.getReserves(
+            uniswapFactory,
             tokenIn,
-            UniswapV2Library.pairFor(_uniswapFactory, tokenIn, _weth),
-            amountIn
+            tokenOut
         );
-        // **** SWAP ****
-        // Copied directly from UniswapV2Router with minor changes as set path length = 3
-        // requires the initial amount to have already been sent to the first pair
-        for (uint256 i; i < 2; i++) {
-            (address input, address output) = (path[i], path[i + 1]);
-            (address token0, ) = UniswapV2Library.sortTokens(input, output);
-            uint256 amountOut = amounts[i + 1];
-            (uint256 amount0Out, uint256 amount1Out) = input == token0
-                ? (uint256(0), amountOut)
-                : (amountOut, uint256(0));
-            address to = i < 1
-                ? UniswapV2Library.pairFor(_uniswapFactory, output, path[2])
-                : address(this);
-            IUniswapV2Pair(
-                UniswapV2Library.pairFor(_uniswapFactory, input, output)
-            ).swap(amount0Out, amount1Out, to, new bytes(0));
-        }
+        //Step 2. get the tokens that will be received
+        tokenOutput = UniswapV2Library.getAmountOut(
+            amountIn,
+            reserveIn,
+            reserveOut
+        );
+        //Step 3. sort the tokens to pass IUniswapV2Pair
+        (address token0, ) = UniswapV2Library.sortTokens(tokenIn, tokenOut);
+        (uint256 amount0Out, uint256 amount1Out) = tokenIn == token0
+            ? (uint256(0), tokenOutput)
+            : (tokenOutput, uint256(0));
+        //Step 4. make the trade
+        IUniswapV2Pair(pair).swap(amount0Out, amount1Out, to, new bytes(0));
     }
 
     //VIEW ONLY FUNCTIONS
 
     /**
-     * Get the total BNPL in the Staking account
-     * = the total BNPL - unbonding balance - slashing balance
+     * Get the total BNPL in the staking account
+     * Given by (total BNPL of node) - (unbonding balance) - (slashing balance)
      */
     function getStakedBNPL() public view returns (uint256) {
         return
@@ -929,19 +951,21 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
 
     /**
      * Get the value of the BNPL staked by user
+     * Given by (user's shares) * (total BNPL staked) / (total number of shares)
      */
     function getBNPLBalance(address user) public view returns (uint256 what) {
-        uint256 balance = stakingShares[user];
+        uint256 _balance = stakingShares[user];
         uint256 _totalStakingShares = totalStakingShares;
-        if (balance == 0 || _totalStakingShares == 0) {
+        if (_totalStakingShares == 0) {
             what = 0;
         } else {
-            what = (balance * getStakedBNPL()) / _totalStakingShares;
+            what = (_balance * getStakedBNPL()) / _totalStakingShares;
         }
     }
 
     /**
      * Get the amount a user has that is being unbonded
+     * Given by (user's unbonding shares) * (total unbonding BNPL) / (total unbonding shares)
      */
     function getUnbondingBalance(address user) external view returns (uint256) {
         uint256 _totalUnbondingShares;
