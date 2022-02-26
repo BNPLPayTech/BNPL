@@ -639,50 +639,53 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         external
         ensurePrincipalRemaining(loanId)
     {
-        //require that the given due date and grace period have expired
-        if (block.timestamp <= getNextDueDate(loanId) + gracePeriod) {
-            revert LoanNotExpired();
-        }
-
+        //Step 1. load loan as local variable
         Loan storage loan = idToLoan[loanId];
-        //check loan is not slashed already
+        //Step 2. requirement checks: loan is ongoing and expired past grace period
         if (loan.isSlashed) {
             revert LoanAlreadySlashed();
         }
-        //get slash % with 10,000 multiplier
+        if (block.timestamp <= getNextDueDate(loanId) + gracePeriod) {
+            revert LoanNotExpired();
+        }
+        //Step 3. calculate the amount to be slashed
         uint256 principalLost = loan.principalRemaining;
-        //safe div: totalassetvalue > 0 if principal > 0
+        //safe div: principal > 0 => totalassetvalue > 0
         uint256 slashPercent = (1e12 * principalLost) / getTotalAssetValue();
         uint256 unbondingSlash = (unbondingAmount * slashPercent) / 1e12;
         uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 1e12;
-        //slash both staked and bonded balances
+        //Step 3. deduct slashed from respective balances
         accountsReceiveable -= principalLost;
         slashingBalance += unbondingSlash + stakingSlash;
         unbondingAmount -= unbondingSlash;
         loan.isSlashed = true;
-        //remove from current loans and add to defualt loans
+        //Step 4. remove loan from currentLoans and add to defaulted loans
         _removeCurrentLoan(loanId);
         defaultedLoans[defaultedLoanCount] = loanId;
         defaultedLoanCount++;
-        //withdraw and sell collateral if any
-        uint256 collateralPosted = loan.collateralAmount;
-        if (collateralPosted > 0) {
-            address collateral = loan.collateral;
+        //Step 5. sell slashed (if any)
+        uint256 _collateralPosted = loan.collateralAmount;
+        if (_collateralPosted > 0) {
+            //Step 5a. load local variables
+            address _collateral = loan.collateral;
             address _baseToken = baseToken;
+            //Step 5b. withdraw collateral from aave
             _withdrawFromLendingPool(
-                collateral,
-                collateralPosted,
+                _collateral,
+                _collateralPosted,
                 address(this)
             );
+            //Step 5c. sell collateral for baseToken
             uint256 baseTokenOut = _swapToken(
-                collateral,
+                _collateral,
                 _baseToken,
                 minOut,
-                collateralPosted
+                _collateralPosted
             );
+            //Step 5d. deposit the recovered baseTokens to aave
             _depositToLendingPool(_baseToken, baseTokenOut);
-            //update collateral info
-            collateralOwed[collateral] -= collateralPosted;
+            //Step 5e. update the colleral owed and loan amounts
+            collateralOwed[_collateral] -= _collateralPosted;
             loan.collateralAmount = 0;
         }
         emit loanSlashed(loanId);
@@ -693,20 +696,24 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Slashing sale moved to seperate function to simplify logic with minOut
      */
     function sellSlashed(uint256 minOut) external {
-        //ensure there is a balance to sell (moved to inside _swap)
-        //As BNPL-ETH Pair is the most liquid, goes BNPL > ETH > baseToken
+        //Step 1. load local variables
         address _baseToken = baseToken;
         address _bnpl = BNPL;
         uint256 _slashingBalance = slashingBalance;
+        //Step 2. check there is a balance to sell
+        if (_slashingBalance == 0) {
+            revert ZeroInput();
+        }
+        //Step 3. sell the slashed BNPL for baseToken
         uint256 baseTokenOut = _swapToken(
             _bnpl,
             _baseToken,
             minOut,
             _slashingBalance
         );
-        slashingBalance = 0;
-        //deposit the baseToken into AAVE
+        //Step 4. deposit baseToken received to aave and update slashing balance
         _depositToLendingPool(_baseToken, baseTokenOut);
+        slashingBalance = 0;
 
         emit slashingSale(_slashingBalance, baseTokenOut);
     }
@@ -716,15 +723,16 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * BNPL can be donated by simply sending it to the contract
      */
     function donateBaseToken(uint256 _amount) external nonZeroInput(_amount) {
+        //Step 1. load local variables
         address _baseToken = baseToken;
-
+        //Step 2. collect the baseTokens
         TransferHelper.safeTransferFrom(
             _baseToken,
             msg.sender,
             address(this),
             _amount
         );
-        //add donation to AAVE
+        //Step 3. deposit baseToken to aave
         _depositToLendingPool(_baseToken, _amount);
 
         emit baseTokensDonated(_amount);
