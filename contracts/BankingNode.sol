@@ -183,6 +183,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         _;
     }
 
+    modifier nonBaseToken(address collateral) {
+        if (collateral == baseToken) {
+            revert InvalidCollateral();
+        }
+        _;
+    }
+
     //STATE CHANGING FUNCTIONS
 
     /**
@@ -238,7 +245,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 collateralAmount,
         address agent,
         string memory message
-    ) external ensureNodeActive returns (uint256 requestId) {
+    )
+        external
+        ensureNodeActive
+        nonBaseToken(collateral)
+        returns (uint256 requestId)
+    {
         if (loanAmount < 1000 || paymentInterval == 0 || interestRate == 0) {
             revert InvalidLoanInput();
         }
@@ -265,10 +277,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         );
         //post the collateral if any
         if (collateralAmount > 0) {
-            //cannot be the smae as base token
-            if (collateral == baseToken) {
-                revert InvalidCollateral();
-            }
             //update the collateral owed (interest accrued on collateral is given to lend)
             collateralOwed[collateral] += collateralAmount;
             TransferHelper.safeTransferFrom(
@@ -337,11 +345,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     /**
      * Collect the interest earnt on collateral posted to distribute to stakers
      */
-    function collectCollateralFees(address collateral) external {
-        //cannot be base token
-        if (collateral == baseToken) {
-            revert InvalidCollateral();
-        }
+    function collectCollateralFees(address collateral)
+        external
+        nonBaseToken(collateral)
+    {
         //get the aToken address
         ILendingPool lendingPool = _getLendingPool();
         address _bnpl = BNPL;
