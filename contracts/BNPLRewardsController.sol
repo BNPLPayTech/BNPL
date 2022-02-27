@@ -73,9 +73,7 @@ contract BNPLRewardsController is Ownable {
      * _allocPoints to be based on the number of bnpl staked in the given node
      */
     function add(IBankingNode _lpToken, bool _withUpdate) public {
-        if (!isValidNode(address(_lpToken))) {
-            revert InvalidToken();
-        }
+        checkValidNode(address(_lpToken));
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -85,7 +83,7 @@ contract BNPLRewardsController is Ownable {
         uint256 lastRewardTime = block.timestamp > startTime
             ? block.timestamp
             : startTime;
-        totalAllocPoint = totalAllocPoint + _allocPoint;
+        totalAllocPoint += _allocPoint;
         poolInfo.push(
             PoolInfo({
                 lpToken: _lpToken,
@@ -107,9 +105,9 @@ contract BNPLRewardsController is Ownable {
         massUpdatePools();
 
         totalAllocPoint =
-            totalAllocPoint -
-            poolInfo[_pid].allocPoint +
-            _allocPoint;
+            totalAllocPoint +
+            _allocPoint -
+            poolInfo[_pid].allocPoint;
         poolInfo[_pid].allocPoint = _allocPoint;
     }
 
@@ -330,15 +328,16 @@ contract BNPLRewardsController is Ownable {
 
     /**
      * Checks if a given address is a valid banking node registered
+     * Reverts with InvalidToken() if node not found
      */
-    function isValidNode(address _bankingNode) private view returns (bool) {
+    function checkValidNode(address _bankingNode) private view {
         BNPLFactory _bnplFactory = bnplFactory;
         uint256 length = _bnplFactory.bankingNodeCount();
         for (uint256 i; i < length; i++) {
             if (_bnplFactory.bankingNodesList(i) == _bankingNode) {
-                return true;
+                return;
             }
         }
-        return false;
+        revert InvalidToken();
     }
 }

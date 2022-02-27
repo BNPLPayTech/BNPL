@@ -889,10 +889,17 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             _weth,
             tokenOut
         );
-        //Step 2. transfer the tokens to first pair
+        //if tokenIn = weth, only need to swap with pair2 with amountIn as input
+        if (tokenIn == _weth) {
+            pair1 = pair2;
+            tokenOutput = amountIn;
+        }
+        //Step 2. transfer the tokens to first pair (pair 2 if tokenIn == weth)
         TransferHelper.safeTransfer(tokenIn, pair1, amountIn);
-        //Step 3. Swap tokenIn to WETH
-        tokenOutput = _swap(tokenIn, _weth, amountIn, pair1, pair2);
+        //Step 3. Swap tokenIn to WETH (only if tokenIn != weth)
+        if (tokenIn != _weth) {
+            tokenOutput = _swap(tokenIn, _weth, amountIn, pair1, pair2);
+        }
         //Step 4. Swap ETH for tokenOut
         tokenOutput = _swap(_weth, tokenOut, tokenOutput, pair2, address(this));
         //Step 5. Check slippage parameters
@@ -913,9 +920,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         address pair,
         address to
     ) private returns (uint256 tokenOutput) {
+        address _uniswapFactory = uniswapFactory;
         //Step 1. get the reserves of each token
         (uint256 reserveIn, uint256 reserveOut) = UniswapV2Library.getReserves(
-            uniswapFactory,
+            _uniswapFactory,
             tokenIn,
             tokenOut
         );
@@ -951,10 +959,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Gets the given users balance in baseToken
      */
     function getBaseTokenBalance(address user) public view returns (uint256) {
+        uint256 _balance = balanceOf(user);
         if (totalSupply() == 0) {
             return 0;
         }
-        return (balanceOf(user) * getTotalAssetValue()) / totalSupply();
+        return (_balance * getTotalAssetValue()) / totalSupply();
     }
 
     /**
@@ -976,12 +985,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Given by (user's unbonding shares) * (total unbonding BNPL) / (total unbonding shares)
      */
     function getUnbondingBalance(address user) external view returns (uint256) {
-        uint256 _totalUnbondingShares;
+        uint256 _totalUnbondingShares = totalUnbondingShares;
+        uint256 _userUnbondingShare = unbondingShares[user];
         if (_totalUnbondingShares == 0) {
             return 0;
         }
-        return
-            (unbondingShares[user] * unbondingAmount) / _totalUnbondingShares;
+        return (_userUnbondingShare * unbondingAmount) / _totalUnbondingShares;
     }
 
     /**
