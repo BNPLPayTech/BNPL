@@ -12,9 +12,14 @@ dotenv: .env
 networks:
   default: kovan
   mainnet: 
-    verify: false
-    router: ''
+    verify: true
+    lendingPoolAddressesProvider: '0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5'
+    router: '0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F'
+    usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    busd: '0x4Fabb145d64652a948d72533023f6E7A623C7C53'
     aaveDistributionController: '0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5'
+    weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    factory: '0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac'
     treasury: '0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29'
   kovan:
     verify: false
