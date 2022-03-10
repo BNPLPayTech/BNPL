@@ -648,6 +648,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     {
         //Step 1. load loan as local variable
         Loan storage loan = idToLoan[loanId];
+
         //Step 2. requirement checks: loan is ongoing and expired past grace period
         if (loan.isSlashed) {
             revert LoanAlreadySlashed();
@@ -655,46 +656,60 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (block.timestamp <= getNextDueDate(loanId) + gracePeriod) {
             revert LoanNotExpired();
         }
-        //Step 3. calculate the amount to be slashed
-        uint256 principalLost = loan.principalRemaining;
-        //safe div: principal > 0 => totalassetvalue > 0
-        uint256 slashPercent = (1e12 * principalLost) / getTotalAssetValue();
-        uint256 unbondingSlash = (unbondingAmount * slashPercent) / 1e12;
-        uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 1e12;
-        //Step 3. deduct slashed from respective balances
-        accountsReceiveable -= principalLost;
-        slashingBalance += unbondingSlash + stakingSlash;
-        unbondingAmount -= unbondingSlash;
-        loan.isSlashed = true;
-        //Step 4. remove loan from currentLoans and add to defaulted loans
-        _removeCurrentLoan(loanId);
-        defaultedLoans[defaultedLoanCount] = loanId;
-        defaultedLoanCount++;
-        //Step 5. sell slashed (if any)
+
+        //Step 3, Check if theres any collateral to slash
         uint256 _collateralPosted = loan.collateralAmount;
+        uint256 baseTokenOut = 0;
+        address _baseToken = baseToken;
         if (_collateralPosted > 0) {
-            //Step 5a. load local variables
+            //Step 3a. load local variables
             address _collateral = loan.collateral;
-            address _baseToken = baseToken;
-            //Step 5b. withdraw collateral from aave
+            //Step 3b. withdraw collateral from aave
             _withdrawFromLendingPool(
                 _collateral,
                 _collateralPosted,
                 address(this)
             );
-            //Step 5c. sell collateral for baseToken
-            uint256 baseTokenOut = _swapToken(
+            //Step 3c. sell collateral for baseToken
+            baseTokenOut = _swapToken(
                 _collateral,
                 _baseToken,
                 minOut,
                 _collateralPosted
             );
-            //Step 5d. deposit the recovered baseTokens to aave
+            //Step 3d. deposit the recovered baseTokens to aave
             _depositToLendingPool(_baseToken, baseTokenOut);
-            //Step 5e. update the colleral owed and loan amounts
+            //Step 3e. update the colleral owed and loan amounts
             collateralOwed[_collateral] -= _collateralPosted;
             loan.collateralAmount = 0;
         }
+        //Step 4. calculate the amount to be slashed
+        uint256 principalLost = loan.principalRemaining;
+        //Check if there was a full recovery for the loan, if so
+        if (baseTokenOut >= principalLost) {
+            //return excess to the lender (if any)
+            _withdrawFromLendingPool(
+                _baseToken,
+                baseTokenOut - principalLost,
+                loan.borrower
+            );
+            //no need to slash as no loss was taken by lenders
+            return;
+        }
+        //safe div: principal > 0 => totalassetvalue > 0
+        uint256 slashPercent = (1e12 * principalLost) / getTotalAssetValue();
+        uint256 unbondingSlash = (unbondingAmount * slashPercent) / 1e12;
+        uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 1e12;
+        //Step 5. deduct slashed from respective balances
+        accountsReceiveable -= principalLost;
+        slashingBalance += unbondingSlash + stakingSlash;
+        unbondingAmount -= unbondingSlash;
+        loan.isSlashed = true;
+        //Step 6. remove loan from currentLoans and add to defaulted loans
+        _removeCurrentLoan(loanId);
+        defaultedLoans[defaultedLoanCount] = loanId;
+        defaultedLoanCount++;
+
         emit loanSlashed(loanId);
     }
 
