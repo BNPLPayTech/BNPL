@@ -693,19 +693,22 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
                 baseTokenOut - principalLost,
                 loan.borrower
             );
-            //no need to slash as no loss was taken by lenders
-            return;
         }
-        //safe div: principal > 0 => totalassetvalue > 0
-        uint256 slashPercent = (1e12 * principalLost) / getTotalAssetValue();
-        uint256 unbondingSlash = (unbondingAmount * slashPercent) / 1e12;
-        uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 1e12;
-        //Step 5. deduct slashed from respective balances
-        accountsReceiveable -= principalLost;
-        slashingBalance += unbondingSlash + stakingSlash;
-        unbondingAmount -= unbondingSlash;
-        loan.isSlashed = true;
+        //slash loan only if losses are greater than recovered
+        else {
+            //safe div: principal > 0 => totalassetvalue > 0
+            uint256 slashPercent = (1e12 * principalLost) /
+                getTotalAssetValue();
+            uint256 unbondingSlash = (unbondingAmount * slashPercent) / 1e12;
+            uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 1e12;
+            //Step 5. deduct slashed from respective balances
+            accountsReceiveable -= principalLost;
+            slashingBalance += unbondingSlash + stakingSlash;
+            unbondingAmount -= unbondingSlash;
+        }
+
         //Step 6. remove loan from currentLoans and add to defaulted loans
+        loan.isSlashed = true;
         _removeCurrentLoan(loanId);
         defaultedLoans[defaultedLoanCount] = loanId;
         defaultedLoanCount++;
