@@ -697,7 +697,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //slash loan only if losses are greater than recovered
         else {
             //safe div: principal > 0 => totalassetvalue > 0
-            uint256 slashPercent = (1e12 * principalLost) /
+            uint256 slashPercent = (1e12 * (principalLost - baseTokenOut)) /
                 getTotalAssetValue();
             uint256 unbondingSlash = (unbondingAmount * slashPercent) / 1e12;
             uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 1e12;
