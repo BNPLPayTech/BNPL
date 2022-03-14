@@ -99,7 +99,11 @@ def main():
     )
     whitelist_usdt(bnpl_factory)
     approve_erc20(BOND_AMOUNT, bnpl_factory, BNPLToken[-1], account)
-    create_node(bnpl_factory)
-    node_address = bnpl_factory.getNode(account)
+    create_node(
+        bnpl_factory,
+        account,
+        config["networks"][network.show_active()]["usdt"],
+    )
+    node_address = bnpl_factory.operatorToNode(account)
     node = Contract.from_abi(BankingNode._name, node_address, BankingNode.abi)
     deploy_rewards_controller(bnpl_factory, BNPLToken[-1], START_TIME)

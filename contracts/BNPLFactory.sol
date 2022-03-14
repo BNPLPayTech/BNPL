@@ -98,6 +98,9 @@ contract BNPLFactory is Ownable {
         external
         onlyOwner
     {
+        if (_baseToken == BNPL) {
+            revert InvalidBaseToken();
+        }
         approvedBaseTokens[_baseToken] = _status;
     }
 
