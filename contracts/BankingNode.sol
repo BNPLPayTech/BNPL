@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT
 
+// NOTE: BankingNode.sol should only be created through the BNPLFactory contract to
+// ensure compatibility of baseToken and minimum bond amounts. Before interacting, 
+// please ensure that the contract deployer was BNPLFactory.sol
+
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -47,6 +51,8 @@ error LoanAlreadySlashed();
 error LoanStillUnbonding();
 //occurs if trying to post baseToken as collateral
 error InvalidCollateral();
+//first deposit to prevent edge case must be at least 10M wei
+error InvalidInitialDeposit()
 
 contract BankingNode is ERC20("BNPL USD", "bUSD") {
     //Node specific variables
@@ -483,6 +489,10 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         ensureNodeActive
         nonZeroInput(_amount)
     {
+        //First deposit must be at least 10M wei to prevent initial attack
+        if (getTotalAssetValue() == 0 && _amount < 10000000){
+            revert InvalidInitialDeposit();
+        }
         //check the decimals of the baseTokens
         address _baseToken = baseToken;
         uint256 decimalAdjust = 1;
