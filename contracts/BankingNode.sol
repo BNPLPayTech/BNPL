@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 // NOTE: BankingNode.sol should only be created through the BNPLFactory contract to
-// ensure compatibility of baseToken and minimum bond amounts. Before interacting, 
+// ensure compatibility of baseToken and minimum bond amounts. Before interacting,
 // please ensure that the contract deployer was BNPLFactory.sol
 
 pragma solidity ^0.8.0;
@@ -52,7 +52,7 @@ error LoanStillUnbonding();
 //occurs if trying to post baseToken as collateral
 error InvalidCollateral();
 //first deposit to prevent edge case must be at least 10M wei
-error InvalidInitialDeposit()
+error InvalidInitialDeposit();
 
 contract BankingNode is ERC20("BNPL USD", "bUSD") {
     //Node specific variables
@@ -490,7 +490,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         nonZeroInput(_amount)
     {
         //First deposit must be at least 10M wei to prevent initial attack
-        if (getTotalAssetValue() == 0 && _amount < 10000000){
+        if (getTotalAssetValue() == 0 && _amount < 10000000) {
             revert InvalidInitialDeposit();
         }
         //check the decimals of the baseTokens
@@ -877,11 +877,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      * Deposit token onto AAVE lending pool, receiving aTokens in return
      */
     function _depositToLendingPool(address tokenIn, uint256 amountIn) private {
-        TransferHelper.safeApprove(
-            tokenIn,
-            address(_getLendingPool()),
-            amountIn
-        );
+        address _lendingPool = address(_getLendingPool());
+        TransferHelper.safeApprove(tokenIn, _lendingPool, 0);
+        TransferHelper.safeApprove(tokenIn, _lendingPool, amountIn);
         _getLendingPool().deposit(tokenIn, amountIn, address(this), 0);
     }
 
