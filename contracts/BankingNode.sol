@@ -256,7 +256,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         nonBaseToken(collateral)
         returns (uint256 requestId)
     {
-        if (loanAmount < 1000 || paymentInterval == 0 || interestRate == 0) {
+        if (
+            loanAmount < 10000000 ||
+            paymentInterval == 0 ||
+            interestRate == 0 ||
+            numberOfPayments == 0
+        ) {
             revert InvalidLoanInput();
         }
         //157,680,000 seconds in 5 years
@@ -632,6 +637,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //update the balances
         unbondingShares[msg.sender] = 0;
         unbondingAmount -= _what;
+        totalUnbondingShares -= _userAmount;
 
         emit bnplWithdrawn(msg.sender, _what);
     }
@@ -696,8 +702,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
         //slash loan only if losses are greater than recovered
         else {
+            principalLost -= baseTokenOut;
             //safe div: principal > 0 => totalassetvalue > 0
-            uint256 slashPercent = (1e12 * (principalLost - baseTokenOut)) /
+            uint256 slashPercent = (1e12 * principalLost) /
                 getTotalAssetValue();
             uint256 unbondingSlash = (unbondingAmount * slashPercent) / 1e12;
             uint256 stakingSlash = (getStakedBNPL() * slashPercent) / 1e12;

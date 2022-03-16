@@ -72,11 +72,11 @@ contract BNPLRewardsController is Ownable {
      * Modified from MasterChef to be public, but requires the pool to be saved in BNPL Factory
      * _allocPoints to be based on the number of bnpl staked in the given node
      */
-    function add(IBankingNode _lpToken, bool _withUpdate) public {
+    function add(IBankingNode _lpToken) public {
         checkValidNode(address(_lpToken));
-        if (_withUpdate) {
-            massUpdatePools();
-        }
+
+        massUpdatePools();
+
         uint256 _allocPoint = _lpToken.getStakedBNPL();
         checkForDuplicate(_lpToken);
 
