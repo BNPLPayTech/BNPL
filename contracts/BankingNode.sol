@@ -632,12 +632,12 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         //safe div: if user amount > 0, then totalUnbondingShares always > 0
         uint256 _what = (_userAmount * _unbondingAmount) /
             _totalUnbondingShares;
-        //transfer the tokens to user
-        TransferHelper.safeTransfer(_bnpl, msg.sender, _what);
         //update the balances
         unbondingShares[msg.sender] = 0;
         unbondingAmount -= _what;
         totalUnbondingShares -= _userAmount;
+        //transfer the tokens to user
+        TransferHelper.safeTransfer(_bnpl, msg.sender, _what);
 
         emit bnplWithdrawn(msg.sender, _what);
     }
