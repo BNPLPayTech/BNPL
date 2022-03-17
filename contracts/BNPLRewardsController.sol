@@ -7,6 +7,7 @@ import "./interfaces/IBankingNode.sol";
 error InvalidToken();
 error InsufficientUserBalance(uint256 userBalance);
 error PoolExists();
+error RewardsCannotIncrease();
 
 /**
  * Modified version of Sushiswap MasterChef.sol contract
@@ -245,9 +246,12 @@ contract BNPLRewardsController is Ownable {
     //OWNER ONLY FUNCTIONS
 
     /**
-     * Update the BNPL per second emmisions
+     * Update the BNPL per second emmisions, emmisions can only be decreased
      */
     function updateRewards(uint256 _bnplPerSecond) public onlyOwner {
+        if (_bnplPerSecond > bnplPerSecond) {
+            revert RewardsCannotIncrease();
+        }
         bnplPerSecond = _bnplPerSecond;
 
         massUpdatePools();
