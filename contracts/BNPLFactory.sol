@@ -67,7 +67,7 @@ contract BNPLFactory is Ownable {
         //create a new node
         bytes memory bytecode = type(BankingNode).creationCode;
         bytes32 salt = keccak256(
-            abi.encodePacked(_baseToken, _requireKYC, _gracePeriod)
+            abi.encodePacked(_baseToken, _requireKYC, _gracePeriod, msg.sender)
         );
         assembly {
             node := create2(0, add(bytecode, 32), mload(bytecode), salt)

@@ -26,7 +26,7 @@ networks:
     lendingPoolAddressesProvider: '0x88757f2f99175387aB4C6a4b3067c77A695b0349'
     router: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'
     usdt: '0x13512979ade267ab5100878e2e0f485b568328a4'
-    busd: '0x4c6E1EFC12FDfD568186b7BAEc0A43fFfb4bCcCf'
+    busd: '0x13512979ade267ab5100878e2e0f485b568328a4'
     aaveDistributionController: '0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5'
     weth: '0xd0A1E359811322d97991E03f863a0C30C2cF029C'
     factory: '0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f'

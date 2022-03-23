@@ -1,4 +1,4 @@
-from scripts.helper import get_account, approve_erc20
+from scripts.helper import get_account, approve_erc20, get_account2
 from brownie import (
     BNPLToken,
     BNPLFactory,
@@ -22,7 +22,10 @@ START_TIME = 0  # CHANGE FOR ACTUAL DEPLOY
 
 def deploy_bnpl_token():
     account = get_account()
-    bnpl = BNPLToken.deploy({"from": account})
+    bnpl = BNPLToken.deploy(
+        {"from": account},
+        publish_source=config["networks"][network.show_active()].get("verify"),
+    )
     return bnpl
 
 
@@ -94,6 +97,8 @@ def deploy_rewards_controller(bnpl_factory, bnpl, start_time):
 
 def main():
     account = get_account()
+    account2 = get_account2()
+    bnpl = deploy_bnpl_token()
     bnpl_factory = deploy_bnpl_factory(
         BNPLToken[-1], config["networks"][network.show_active()]["weth"]
     )

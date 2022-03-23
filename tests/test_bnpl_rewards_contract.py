@@ -19,8 +19,8 @@ from brownie import (
 from web3 import Web3
 
 BOND_AMOUNT = Web3.toWei(2000000, "ether")
-USDT_AMOUNT = 100 * 10**6  # 100 USDT
-BUSD_AMOUNT = 100 * 10**18  # 100 BUSD
+USDT_AMOUNT = 200 * 10**6  # 100 USDT
+BUSD_AMOUNT = 200 * 10**18  # 100 BUSD
 
 """
 """
@@ -106,15 +106,15 @@ def test_rewards_contract():
 
     # Check that we can not add a invalid token
     with pytest.raises(Exception):
-        rewards_controller.add(busd_address, True, {"from": account2})
+        rewards_controller.add(busd_address, {"from": account2})
     with pytest.raises(Exception):
-        rewards_controller.add(bnpl, True, {"from": account2})
+        rewards_controller.add(bnpl, {"from": account2})
 
     # Add the two valid lp address
-    tx = rewards_controller.add(busd_node_address, True, {"from": account2})
+    tx = rewards_controller.add(busd_node_address, {"from": account2})
     tx.wait(1)
     assert rewards_controller.poolLength() == 1
-    tx = rewards_controller.add(usdt_node_address, False, {"from": account})
+    tx = rewards_controller.add(usdt_node_address, {"from": account})
     tx.wait(1)
     tx = rewards_controller.set(1, {"from": account})
     tx.wait(1)
