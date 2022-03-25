@@ -56,7 +56,7 @@ error InvalidCollateral();
 //first deposit to prevent edge case must be at least 10M wei
 error InvalidInitialDeposit();
 
-contract BankingNode is ERC20 ("BNPL USD", "bUSD") {
+contract BankingNode is ERC20("BNPL USD", "bUSD") {
     //Node specific variables
     address public operator;
     address public baseToken; //base liquidity token, e.g. USDT or USDC
@@ -140,7 +140,6 @@ contract BankingNode is ERC20 ("BNPL USD", "bUSD") {
 
     constructor() {
         bnplFactory = msg.sender;
-        timeCreated = block.timestamp;
     }
 
     // MODIFIERS
@@ -235,6 +234,7 @@ contract BankingNode is ERC20 ("BNPL USD", "bUSD") {
         WETH = _WETH;
         uniswapFactory = _uniswapFactory;
         treasury = address(0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29);
+        timeCreated = block.timestamp;
         //decimal check on baseToken and aToken to make sure math logic on future steps
         require(
             ERC20(_baseToken).decimals() ==
@@ -1125,5 +1125,4 @@ contract BankingNode is ERC20 ("BNPL USD", "bUSD") {
     function getCurrentLoansCount() external view returns (uint256) {
         return currentLoans.length;
     }
-
 }
