@@ -97,8 +97,12 @@ def deploy_rewards_controller(bnpl_factory, bnpl, start_time):
 
 def main():
     account = get_account()
-    account2 = get_account2()
     bnpl = deploy_bnpl_token()
+
+    front_end_dev = "0x8bD243b54eB32dD8025c1f5534b194909caFea47"
+    
+    bnpl.transfer(front_end_dev, BOND_AMOUNT * 20, {"from": account})
+
     bnpl_factory = deploy_bnpl_factory(
         BNPLToken[-1], config["networks"][network.show_active()]["weth"]
     )

@@ -344,4 +344,24 @@ contract BNPLRewardsController is Ownable {
         }
         revert InvalidToken();
     }
+
+    /**
+     * Get the Apy for front end for a given pool
+     * - assumes rewards are active
+     * - assumes poolTokens have $1 value
+     * - must multiply by BNPL price / 1e18 to get USD APR
+     * If return == 0, APR = NaN
+     */
+    function getBnplApr(uint256 _pid) external view returns (uint256 bnplApr) {
+        PoolInfo storage pool = poolInfo[_pid];
+        uint256 lpBalanceStaked = pool.lpToken.balanceOf(address(this));
+        if (lpBalanceStaked == 0) {
+            bnplApr = 0;
+        } else {
+            uint256 poolBnplPerYear = (bnplPerSecond *
+                pool.allocPoint *
+                31536000) / totalAllocPoint; //31536000 seconds in a year
+            bnplApr = (poolBnplPerYear * 1e18) / lpBalanceStaked;
+        }
+    }
 }
