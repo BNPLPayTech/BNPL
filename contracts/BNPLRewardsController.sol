@@ -364,4 +364,18 @@ contract BNPLRewardsController is Ownable {
             bnplApr = (poolBnplPerYear * 1e18) / lpBalanceStaked;
         }
     }
+
+    /**
+     * Helper function for front end
+     * Get the pid+1 given a node address
+     * Returns 0xFFFF if node not found
+     */
+    function getPid(address node) external view returns (uint256) {
+        for (uint256 i; i < poolInfo.length; ++i) {
+            if (address(poolInfo[i].lpToken) == node) {
+                return i;
+            }
+        }
+        return 0xFFFF;
+    }
 }

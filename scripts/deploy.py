@@ -23,7 +23,7 @@ START_TIME = 0  # CHANGE FOR ACTUAL DEPLOY
 def deploy_bnpl_token():
     account = get_account()
     bnpl = BNPLToken.deploy(
-        {"from": account},
+        {"from": account, "gas_price": "2.5 gwei"},
         publish_source=config["networks"][network.show_active()].get("verify"),
     )
     return bnpl
@@ -38,7 +38,7 @@ def deploy_bnpl_factory(bnpl, weth):
         weth,
         config["networks"][network.show_active()]["aaveDistributionController"],
         config["networks"][network.show_active()]["factory"],
-        {"from": account},
+        {"from": account, "gas_price": "2.5 gwei"},
         publish_source=config["networks"][network.show_active()].get("verify"),
     )
     return bnpl_factory
@@ -48,14 +48,16 @@ def whitelist_usdt(bnpl_factory):
     account = get_account()
     print("Whitelisting USDT..")
     bnpl_factory.whitelistToken(
-        config["networks"][network.show_active()]["usdt"], True, {"from": account}
+        config["networks"][network.show_active()]["usdt"],
+        True,
+        {"from": account, "gas_price": "2.5 gwei"},
     )
 
 
 def whitelist_token(bnpl_factory, token):
     account = get_account()
     print("Whitelisting USDT..")
-    bnpl_factory.whitelistToken(token, True, {"from": account})
+    bnpl_factory.whitelistToken(token, True, {"from": account, "gas_price": "2.5 gwei"})
 
 
 def create_node(bnpl_factory, account, token):
@@ -63,7 +65,7 @@ def create_node(bnpl_factory, account, token):
         token,
         False,
         GRACE_PERIOD,
-        {"from": account},
+        {"from": account, "gas_price": "2.5 gwei"},
     )
     tx.wait(1)
 
@@ -90,7 +92,11 @@ def add_lp(token):
 def deploy_rewards_controller(bnpl_factory, bnpl, start_time):
     account = get_account()
     rewards_controller = BNPLRewardsController.deploy(
-        bnpl_factory, bnpl, account, start_time, {"from": account}
+        bnpl_factory,
+        bnpl,
+        account,
+        start_time,
+        {"from": account, "gas_price": "2.5 gwei"},
     )
     return rewards_controller
 
@@ -100,8 +106,10 @@ def main():
     bnpl = deploy_bnpl_token()
 
     front_end_dev = "0x8bD243b54eB32dD8025c1f5534b194909caFea47"
-    
-    bnpl.transfer(front_end_dev, BOND_AMOUNT * 20, {"from": account})
+
+    bnpl.transfer(
+        front_end_dev, BOND_AMOUNT * 20, {"from": account, "gas_price": "2.5 gwei"}
+    )
 
     bnpl_factory = deploy_bnpl_factory(
         BNPLToken[-1], config["networks"][network.show_active()]["weth"]
@@ -115,4 +123,4 @@ def main():
     )
     node_address = bnpl_factory.operatorToNode(account)
     node = Contract.from_abi(BankingNode._name, node_address, BankingNode.abi)
-    deploy_rewards_controller(bnpl_factory, BNPLToken[-1], START_TIME)
+    deploy_rewards_controller(BNPLFactory[-1], BNPLToken[-1], START_TIME)
