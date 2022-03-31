@@ -22,9 +22,6 @@ BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 200 * 10**6  # 100 USDT
 BUSD_AMOUNT = 200 * 10**18  # 100 BUSD
 
-"""
-"""
-
 
 def test_rewards_contract():
 

@@ -21,9 +21,6 @@ from web3 import Web3
 BOND_AMOUNT = Web3.toWei(2000000, "ether")
 USDT_AMOUNT = 100 * 10**6  # 100 USDT
 
-"""
-"""
-
 
 def test_banking_node_interest_only():
 
