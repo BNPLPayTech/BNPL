@@ -91,7 +91,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
     uint256 public slashingBalance;
     mapping(address => uint256) public stakingShares;
     //can be private as there is a getter function for staking balance
-    uint256 private totalStakingShares;
+    uint256 public totalStakingShares;
 
     uint256 public unbondingAmount;
     mapping(address => uint256) public unbondingShares;
@@ -1124,5 +1124,17 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
      */
     function getCurrentLoansCount() external view returns (uint256) {
         return currentLoans.length;
+    }
+
+    /**
+     * Get the total Losses occurred
+     */
+    function getTotalDefaultLoss() external view returns (uint256) {
+        uint256 totalLosses = 0;
+        for (uint256 i; i < defaultedLoanCount; i++) {
+            Loan storage loan = idToLoan[defaultedLoans[i]];
+            totalLosses += loan.principalRemaining;
+        }
+        return totalLosses;
     }
 }
