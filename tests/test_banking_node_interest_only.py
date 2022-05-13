@@ -1,5 +1,6 @@
-from scripts.helper import get_account, approve_erc20, get_account2
-from scripts.deploy import (
+from scripts.helper import get_account, approve_erc20, get_weth
+from scripts.uniswap_helpers import swap_to_stablecoins
+from scripts.deploy_helpers import (
     create_node,
     whitelist_usdt,
     deploy_bnpl_factory,
@@ -25,26 +26,29 @@ USDT_AMOUNT = 100 * 10**6  # 100 USDT
 def test_banking_node_interest_only():
 
     account = get_account()
-    account2 = get_account2()
+    account2 = get_account(index=2)
+
+    get_weth(account, 100)
+    get_weth(account2, 100)
+    swap_to_stablecoins(account)
+    swap_to_stablecoins(account2)
 
     # Deploy BNPL Token
-    bnpl = deploy_bnpl_token()
+    BNPL = deploy_bnpl_token()
 
     # Deploy factory
-    factory = deploy_bnpl_factory(
-        BNPLToken[-1], config["networks"][network.show_active()]["weth"]
-    )
+    FACTORY = deploy_bnpl_factory(BNPL, account)
 
     # Whitelist USDT for the factory
-    whitelist_usdt(factory)
+    whitelist_usdt(FACTORY)
 
     # Deploy node
     usdt_address = config["networks"][network.show_active()]["usdt"]
-    approve_erc20(BOND_AMOUNT, factory, bnpl, account)
-    create_node(factory, account, usdt_address)
+    approve_erc20(BOND_AMOUNT, FACTORY, BNPL, account)
+    create_node(FACTORY, account, usdt_address)
 
     # Check that node was created
-    node_address = factory.operatorToNode(account)
+    node_address = FACTORY.operatorToNode(account)
     node = Contract.from_abi(BankingNode._name, node_address, BankingNode.abi)
 
     # Check that 2M BNPL was bonded

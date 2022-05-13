@@ -330,13 +330,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (loan.principalRemaining > 0) {
             revert LoanStillOngoing();
         }
-        //no need to check if loan is slashed as collateral amont set to 0 on slashing
-        _withdrawFromLendingPool(collateral, amount, loan.borrower);
 
         //update the amounts
         collateralOwed[collateral] -= amount;
         loan.collateralAmount = 0;
 
+        //no need to check if loan is slashed as collateral amont set to 0 on slashing
+        _withdrawFromLendingPool(collateral, amount, loan.borrower);
         emit collateralWithdrawn(loanId, collateral, amount);
     }
 
@@ -438,6 +438,13 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         uint256 interestAmount = (principalLeft * loan.interestRate) / 10000;
         uint256 paymentAmount = principalLeft + interestAmount;
         address _baseToken = baseToken;
+
+        //update accounts
+        accountsReceiveable -= principalLeft;
+        loan.principalRemaining = 0;
+        //increment the loan status to final and remove from current loans array
+        loan.paymentsMade = loan.numberOfPayments;
+
         //make payment
         TransferHelper.safeTransferFrom(
             _baseToken,
@@ -451,11 +458,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             paymentAmount - ((interestAmount * 3) / 10)
         );
 
-        //update accounts
-        accountsReceiveable -= principalLeft;
-        loan.principalRemaining = 0;
-        //increment the loan status to final and remove from current loans array
-        loan.paymentsMade = loan.numberOfPayments;
         _removeCurrentLoan(loanId);
 
         emit loanRepaidEarly(loanId);
@@ -650,9 +652,9 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         unbondingShares[msg.sender] = 0;
         unbondingAmount -= _what;
         totalUnbondingShares -= _userAmount;
+
         //transfer the tokens to user
         TransferHelper.safeTransfer(_bnpl, msg.sender, _what);
-
         emit bnplWithdrawn(msg.sender, _what);
     }
 
@@ -684,24 +686,26 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         if (_collateralPosted > 0) {
             //Step 3a. load local variables
             address _collateral = loan.collateral;
-            //Step 3b. withdraw collateral from aave
+
+            //Step 3b. update the colleral owed and loan amounts
+            collateralOwed[_collateral] -= _collateralPosted;
+            loan.collateralAmount = 0;
+
+            //Step 3c. withdraw collateral from aave
             _withdrawFromLendingPool(
                 _collateral,
                 _collateralPosted,
                 address(this)
             );
-            //Step 3c. sell collateral for baseToken
+            //Step 3d. sell collateral for baseToken
             baseTokenOut = _swapToken(
                 _collateral,
                 _baseToken,
                 minOut,
                 _collateralPosted
             );
-            //Step 3d. deposit the recovered baseTokens to aave
+            //Step 3e. deposit the recovered baseTokens to aave
             _depositToLendingPool(_baseToken, baseTokenOut);
-            //Step 3e. update the colleral owed and loan amounts
-            collateralOwed[_collateral] -= _collateralPosted;
-            loan.collateralAmount = 0;
         }
         //Step 4. calculate the amount to be slashed
         uint256 principalLost = loan.principalRemaining;
@@ -729,11 +733,11 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         }
 
         //Step 6. remove loan from currentLoans and add to defaulted loans
-        loan.isSlashed = true;
-        _removeCurrentLoan(loanId);
         defaultedLoans[defaultedLoanCount] = loanId;
         defaultedLoanCount++;
 
+        loan.isSlashed = true;
+        _removeCurrentLoan(loanId);
         emit loanSlashed(loanId);
     }
 
@@ -758,8 +762,8 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             _slashingBalance
         );
         //Step 4. deposit baseToken received to aave and update slashing balance
-        _depositToLendingPool(_baseToken, baseTokenOut);
         slashingBalance = 0;
+        _depositToLendingPool(_baseToken, baseTokenOut);
 
         emit slashingSale(_slashingBalance, baseTokenOut);
     }

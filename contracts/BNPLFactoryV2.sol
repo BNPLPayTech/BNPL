@@ -5,6 +5,8 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
+// import "./transparent_proxy/TransparentUpgradeableProxy.sol";
+// import "./transparent_proxy/ProxyAdmin.sol";
 import "./BankingNode.sol";
 import "./libraries/TransferHelper.sol";
 
@@ -15,16 +17,19 @@ error InvalidBaseToken();
 //occurs when a user tries to set up a second node from same account
 error OneNodePerAccountOnly();
 
-contract BNPLFactory is Initializable, OwnableUpgradeable {
+contract BNPLFactoryV2 is Initializable, OwnableUpgradeable {
 
     mapping(address => address) public operatorToNode;
     address[] public bankingNodesList;
     address public BNPL;
+    // BankingNode public BankingNodeImplementation;
     address public lendingPoolAddressesProvider;
     address public WETH;
     address public uniswapFactory;
     mapping(address => bool) public approvedBaseTokens;
     address public aaveDistributionController;
+
+    uint public iDontExistInOriginalContract;
 
     event NewNode(address indexed _operator, address indexed _node);
 
@@ -34,6 +39,7 @@ contract BNPLFactory is Initializable, OwnableUpgradeable {
     */
     function initialize(
         address _BNPL,
+        // BankingNode _bankingNodeImplementation,
         address _lendingPoolAddressesProvider,
         address _WETH,
         address _aaveDistributionController,
@@ -42,11 +48,13 @@ contract BNPLFactory is Initializable, OwnableUpgradeable {
         __Ownable_init();
 
         BNPL = _BNPL;
+        // BankingNodeImplementation = _bankingNodeImplementation;
         lendingPoolAddressesProvider = _lendingPoolAddressesProvider;
         WETH = _WETH;
         aaveDistributionController = _aaveDistributionController;
         uniswapFactory = _uniswapFactory;
     }
+    
 
     //STATE CHANGING FUNCTIONS
 
@@ -93,12 +101,11 @@ contract BNPLFactory is Initializable, OwnableUpgradeable {
             aaveDistributionController,
             uniswapFactory
         );
+        TransferHelper.safeApprove(_bnpl, node, bondAmount);
+        BankingNode(node).stake(bondAmount);
 
         bankingNodesList.push(node);
         operatorToNode[msg.sender] = node;
-        
-        TransferHelper.safeApprove(_bnpl, node, bondAmount);
-        BankingNode(node).stake(bondAmount);
     }
 
     //ONLY OWNER FUNCTIONS
@@ -121,5 +128,10 @@ contract BNPLFactory is Initializable, OwnableUpgradeable {
      */
     function bankingNodeCount() external view returns (uint256) {
         return bankingNodesList.length;
+    }
+
+    // Stores a new value in the contract
+    function thisIsANewFunction(uint256 value) public {
+        iDontExistInOriginalContract = value;
     }
 }
