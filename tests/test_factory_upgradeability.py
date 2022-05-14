@@ -2,7 +2,7 @@ import pytest
 from brownie import (
     BankingNode,
     BNPLFactory,
-    BNPLFactoryV2,
+    BNPLFactoryDEMO,
     Contract,
     config,
     network,
@@ -53,7 +53,7 @@ def test_factory_upgradeability():
     assert node.getBNPLBalance(account) == BOND_AMOUNT
 
     # Upgrading the Factory to a new implementation
-    FACTORY_V2 = upgrade_factory(BNPLFactoryV2, account)
+    FACTORY_V2 = upgrade_factory(BNPLFactoryDEMO, account)
 
     # The following function is unique to the new implementation. We are calling the same proxy as before, 
     # but the proxy is now forwarding / delegating the calls to the new implementation.

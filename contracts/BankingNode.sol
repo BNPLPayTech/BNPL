@@ -56,7 +56,7 @@ error InvalidCollateral();
 //first deposit to prevent edge case must be at least 10M wei
 error InvalidInitialDeposit();
 
-contract BankingNode is ERC20("BNPL USD", "bUSD") {
+contract BankingNode is ERC20("BNPL USD", "pUSD") {
     //Node specific variables
     address public operator;
     address public baseToken; //base liquidity token, e.g. USDT or USDC
@@ -444,6 +444,7 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         loan.principalRemaining = 0;
         //increment the loan status to final and remove from current loans array
         loan.paymentsMade = loan.numberOfPayments;
+        _removeCurrentLoan(loanId);
 
         //make payment
         TransferHelper.safeTransferFrom(
@@ -457,8 +458,6 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
             _baseToken,
             paymentAmount - ((interestAmount * 3) / 10)
         );
-
-        _removeCurrentLoan(loanId);
 
         emit loanRepaidEarly(loanId);
     }
@@ -831,15 +830,15 @@ contract BankingNode is ERC20("BNPL USD", "bUSD") {
         loan.principalRemaining = loanSize;
         loan.loanStartTime = block.timestamp;
         accountsReceiveable += loanSize;
-        //send the funds and update accounts (minus 0.75% origination fee)
+        //send the funds and update accounts (minus 0.5% origination fee)
 
         _withdrawFromLendingPool(
             _baseToken,
-            (loanSize * 397) / 400,
+            (loanSize * 199) / 200,
             loan.borrower
         );
-        //send the 0.5% origination fee to treasury and agent
-        _withdrawFromLendingPool(_baseToken, loanSize / 200, treasury);
+        //send the 0.25% origination fee to treasury and agent
+        _withdrawFromLendingPool(_baseToken, loanSize / 400, treasury);
         _withdrawFromLendingPool(
             _baseToken,
             loanSize / 400,

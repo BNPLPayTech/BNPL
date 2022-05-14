@@ -1,7 +1,6 @@
 from brownie import (
     BNPLToken,
     BNPLFactory,
-    # BNPLFactoryV2,
     ProxyAdmin,
     TransparentUpgradeableProxy,
     BNPLRewardsController,
@@ -51,16 +50,20 @@ def deploy_bnpl_factory(BNPL, account):
     Reference:
     https://docs.openzeppelin.com/upgrades-plugins/1.x/proxies
     """
+    print("Deploying ProxyAdmin contract...")
     # Admin and upgrade interface. This contract will be the owner of the proxy contract.
     PROXY_ADMIN_FACTORY = ProxyAdmin.deploy(
         {"from": account},
     )
+    print("Deployed!")
 
+    print("Deploying BNPLFactory implementation contract...")
     # The implentation contract. All calls to the proxy will be delegated here
     BNPL_FACTORY = BNPLFactory.deploy(
         {"from": account},
         publish_source=config["networks"][network.show_active()]["verify"],
     )
+    print("Deployed!")
 
     # Preparing the initialization of the contract
     box_encoded_initializer_function = encode_function_data(
@@ -72,6 +75,7 @@ def deploy_bnpl_factory(BNPL, account):
         config["networks"][network.show_active()]["factory"],
     )
 
+    print("Deploying Factory Proxy contract...")
     # The Proxy contract. Will delegate all calls to the implementation contract.
     PROXY_BNPL_FACTORY = TransparentUpgradeableProxy.deploy(
         BNPL_FACTORY.address,
@@ -79,6 +83,7 @@ def deploy_bnpl_factory(BNPL, account):
         box_encoded_initializer_function,
         {"from": account, "gas_limit": 1000000},
     )
+    print("Deployed!")
 
     PROXY = Contract.from_abi(
         "BNPLFactory_v0", PROXY_BNPL_FACTORY.address, BNPLFactory.abi
@@ -168,6 +173,7 @@ def add_lp(token):
 
 def deploy_rewards_controller(bnpl_factory, bnpl, start_time):
     account = get_account()
+    print("deploying rewards controller...")
     rewards_controller = BNPLRewardsController.deploy(
         bnpl_factory,
         bnpl,
@@ -175,7 +181,7 @@ def deploy_rewards_controller(bnpl_factory, bnpl, start_time):
         start_time,
         {"from": account, "gas_price": "2.5 gwei"},
     )
-    # rewards_controller.wait(1)
+    print("deployed!")
     return rewards_controller
 
 

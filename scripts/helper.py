@@ -17,7 +17,7 @@ def get_account(index=None, id=None):
     if id:
         return accounts.load(id)
     if network.show_active() in config["networks"]:
-        return accounts.add(config["wallets"]["from_key"])
+        return accounts.add(config["wallets"]["key1"])
     return None
 
 
