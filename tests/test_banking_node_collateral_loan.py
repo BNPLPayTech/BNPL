@@ -1,5 +1,6 @@
-from scripts.helper import get_account, approve_erc20, get_account2
-from scripts.deploy import (
+from scripts.helper import get_account, approve_erc20, get_weth
+from scripts.uniswap_helpers import swap_to_stablecoins
+from scripts.deploy_helpers import (
     create_node,
     whitelist_usdt,
     deploy_bnpl_factory,
@@ -27,26 +28,29 @@ USDT_AMOUNT = 100 * 10**6  # 100 USDT
 def test_banking_node_collateral_loan():
 
     account = get_account()
-    account2 = get_account2()
+    account2 = get_account(index=2)
+
+    get_weth(account, 100)
+    get_weth(account2, 100)
+    swap_to_stablecoins(account)
+    swap_to_stablecoins(account2)
 
     # Deploy BNPL Token
-    bnpl = deploy_bnpl_token()
+    BNPL = deploy_bnpl_token()
 
     # Deploy factory
-    factory = deploy_bnpl_factory(
-        BNPLToken[-1], config["networks"][network.show_active()]["weth"]
-    )
-
+    FACTORY = deploy_bnpl_factory(BNPL, account)
     # Whitelist USDT for the factory
-    whitelist_usdt(factory)
+    whitelist_usdt(FACTORY)
 
-    usdt_address = config["networks"][network.show_active()]["usdt"]
+    # usdt_address = config["networks"][network.show_active()]["usdt"]
+    USDT = interface.IERC20(config["networks"][network.show_active()]["usdt"])
     # Deploy node
-    approve_erc20(BOND_AMOUNT, factory, bnpl, account)
-    create_node(factory, account, usdt_address)
+    approve_erc20(BOND_AMOUNT, FACTORY, BNPL, account)
+    create_node(FACTORY, account, USDT.address)
 
     # Check that node was created
-    node_address = factory.operatorToNode(account)
+    node_address = FACTORY.operatorToNode(account)
     node = Contract.from_abi(BankingNode._name, node_address, BankingNode.abi)
 
     # Check that 2M BNPL was bonded
@@ -54,7 +58,7 @@ def test_banking_node_collateral_loan():
 
     # Unbond and redeposit for future unbonding checks
     node.initiateUnstake(BOND_AMOUNT / 2, {"from": account})
-    approve_erc20(BOND_AMOUNT / 2, node_address, bnpl, account)
+    approve_erc20(BOND_AMOUNT / 2, node_address, BNPL, account)
     node.stake(BOND_AMOUNT / 2, {"from": account})
 
     # Test on a slashing loan + collateral loan at same time
@@ -62,7 +66,7 @@ def test_banking_node_collateral_loan():
     payment_interval = 1
 
     # check that collateral loan fails if collateral can not be deposited into aave
-    approve_erc20(COLLAT_AMOUNT, node_address, bnpl, account2)
+    approve_erc20(COLLAT_AMOUNT, node_address, BNPL, account2)
 
     with pytest.raises(Exception):
         tx = node.requestLoan(
@@ -71,7 +75,7 @@ def test_banking_node_collateral_loan():
             12,
             83,
             False,
-            bnpl,
+            BNPL,
             COLLAT_AMOUNT,
             account,
             "collateral loan",
@@ -80,11 +84,11 @@ def test_banking_node_collateral_loan():
 
     # Collateral Loan with BUSD as collateral
 
-    busd_address = config["networks"][network.show_active()]["busd"]
-    busd = interface.IERC20(busd_address)
-    initial_busd_balance = busd.balanceOf(account2)
 
-    approve_erc20(COLLAT_AMOUNT, node_address, busd_address, account2)
+    DAI = interface.IERC20(config["networks"][network.show_active()]["dai"])
+    initial_dai_balance = DAI.balanceOf(account2)
+
+    approve_erc20(COLLAT_AMOUNT, node_address, DAI.address, account2)
 
     tx = node.requestLoan(
         USDT_AMOUNT / 2,
@@ -92,7 +96,7 @@ def test_banking_node_collateral_loan():
         12,
         1000,
         False,
-        busd_address,
+        DAI.address,
         COLLAT_AMOUNT,
         account,
         "collateral loan",
@@ -102,8 +106,8 @@ def test_banking_node_collateral_loan():
 
     # Check loan was approved and collateral posted
     assert node.getPendingRequestCount() == 1
-    assert busd.balanceOf(account2) < initial_busd_balance
-    assert node.collateralOwed(busd_address) == COLLAT_AMOUNT
+    assert DAI.balanceOf(account2) < initial_dai_balance
+    assert node.collateralOwed(DAI.address) == COLLAT_AMOUNT
 
     loan_id_collateral = node.pendingRequests(0)
 
@@ -134,12 +138,12 @@ def test_banking_node_collateral_loan():
     tx = node.withdrawCollateral(loan_id_collateral, {"from": account2})
     tx.wait(1)
 
-    assert busd.balanceOf(account2) == initial_busd_balance
-    assert node.collateralOwed(busd_address) < COLLAT_AMOUNT * 0.01
+    assert DAI.balanceOf(account2) == initial_dai_balance
+    assert node.collateralOwed(DAI.address) < COLLAT_AMOUNT * 0.01
 
     # Reapply for the loans
 
-    approve_erc20(COLLAT_AMOUNT, node_address, busd_address, account2)
+    approve_erc20(COLLAT_AMOUNT, node_address, DAI.address, account2)
 
     tx = node.requestLoan(
         USDT_AMOUNT / 2,
@@ -147,7 +151,7 @@ def test_banking_node_collateral_loan():
         12,
         83,
         False,
-        busd_address,
+        DAI.address,
         COLLAT_AMOUNT,
         account,
         "collateral loan",
@@ -229,7 +233,7 @@ def test_banking_node_collateral_loan():
     )
     assert (
         node.getTotalAssetValue() >= expected_total_asset_value * 0.99
-        and node.getTotalAssetValue() <= expected_total_asset_value
+        and node.getTotalAssetValue() <= expected_total_asset_value * 1.01
     )
 
     # Ensure we can not unbond as 7 days has not passed
@@ -237,7 +241,7 @@ def test_banking_node_collateral_loan():
         node.unstake({"from": account})
 
     # Deploy liquidity on Uniswap for BNPL/ETH
-    add_lp(bnpl)
+    add_lp(BNPL)
 
     # Check the loan time has expired and is ready to be slashed
     assert node.getNextDueDate(loan_id_slashing) < time.time()
@@ -312,8 +316,9 @@ def test_banking_node_collateral_loan():
     accounts_receiveable_lost = USDT_AMOUNT / 2
 
     assert node.getTotalAssetValue() > initial_usd_balance - accounts_receiveable_lost
-    assert node.collateralOwed(busd_address) == 0
-    assert node.slashingBalance() > 0
+    assert node.collateralOwed(DAI.address) == 0
+    if node.getTotalAssetValue() < initial_usd_balance:
+        assert node.slashingBalance() > 0
 
     # Ensure collateral can no longer be withdrawn
     with pytest.raises(Exception):
@@ -321,7 +326,7 @@ def test_banking_node_collateral_loan():
 
     # Check that there was a small amount of interest earnt on the collateral
     initial_staked_bnpl = node.getBNPLBalance(account)
-    tx = node.collectCollateralFees(busd_address, {"from": account})
+    tx = node.collectCollateralFees(DAI.address, {"from": account})
     tx.wait(1)
     assert node.getBNPLBalance(account) > initial_staked_bnpl
     assert node.defaultedLoanCount() == 2

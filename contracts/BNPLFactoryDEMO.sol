@@ -15,8 +15,11 @@ error InvalidBaseToken();
 //occurs when a user tries to set up a second node from same account
 error OneNodePerAccountOnly();
 
-contract BNPLFactory is Initializable, OwnableUpgradeable {
-
+/**
+ * @dev this is a demo contract. It is identical to BNPLFactory, except the function thisIsANewFunction(). 
+ * The only purpose of this is to demostrate via tests that the BNPLFactory contract is upgradeable. 
+*/
+contract BNPLFactoryDEMO is Initializable, OwnableUpgradeable {
     mapping(address => address) public operatorToNode;
     address[] public bankingNodesList;
     address public BNPL;
@@ -26,12 +29,14 @@ contract BNPLFactory is Initializable, OwnableUpgradeable {
     mapping(address => bool) public approvedBaseTokens;
     address public aaveDistributionController;
 
+    uint iDontExistInOriginalContract;
+
     event NewNode(address indexed _operator, address indexed _node);
 
     /**
      * Upgradeable contracts uses an initializer function instead of a constructor
      * Reference: https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable#initializers
-    */
+     */
     function initialize(
         address _BNPL,
         address _lendingPoolAddressesProvider,
@@ -96,7 +101,7 @@ contract BNPLFactory is Initializable, OwnableUpgradeable {
 
         bankingNodesList.push(node);
         operatorToNode[msg.sender] = node;
-        
+
         TransferHelper.safeApprove(_bnpl, node, bondAmount);
         BankingNode(node).stake(bondAmount);
     }
@@ -121,5 +126,12 @@ contract BNPLFactory is Initializable, OwnableUpgradeable {
      */
     function bankingNodeCount() external view returns (uint256) {
         return bankingNodesList.length;
+    }
+
+    /**
+     * @dev Used to demonstrate that the factory can be upgraded, as this function does not exist in the original implementation
+     */
+    function thisIsANewFunction(uint256 value) public {
+        iDontExistInOriginalContract = value;
     }
 }

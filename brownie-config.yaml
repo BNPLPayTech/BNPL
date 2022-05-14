@@ -2,20 +2,51 @@ dependencies:
   - smartcontractkit/chainlink-brownie-contracts@0.2.2
   - OpenZeppelin/openzeppelin-contracts@4.2.0
   - OpenZeppelin/openzeppelin-contracts@3.4.0
+  - OpenZeppelin/openzeppelin-contracts-upgradeable@4.6.0
 compiler:
   solc:
     remappings:
       - '@chainlink=smartcontractkit/chainlink-brownie-contracts@0.2.2'
+      - '@openzeppelin/contracts-upgradeable=OpenZeppelin/openzeppelin-contracts-upgradeable@4.6.0'
       - '@openzeppelin=OpenZeppelin/openzeppelin-contracts@4.2.0'
       - '@openzeppelin1=OpenZeppelin/openzeppelin-contracts@3.4.0'
+      
 dotenv: .env
 networks:
-  default: kovan
-  mainnet: 
-    verify: true
+  # default: kovan
+  default: mainnet-fork
+  # default: development
+  development:
+    verify: false
     lendingPoolAddressesProvider: '0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5'
     router: '0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F'
     usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    busd: '0x4Fabb145d64652a948d72533023f6E7A623C7C53'
+    aaveDistributionController: '0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5'
+    weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    factory: '0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac'
+    treasury: '0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29'
+  mainnet-fork: 
+    verify: false
+    lendingPoolAddressesProvider: '0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5'
+    router: '0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F'
+    usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    dai: '0x6b175474e89094c44da98b954eedeac495271d0f'
+    bnpl: '0x84d821f7fbdd595c4c4a50842913e6b1e07d7a53'
+    busd: '0x4Fabb145d64652a948d72533023f6E7A623C7C53'
+    aaveDistributionController: '0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5'
+    weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    factory: '0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac'
+    treasury: '0x27a99802FC48b57670846AbFFf5F2DcDE8a6fC29'
+  mainnet:
+    verify: true
+    lendingPoolAddressesProvider: '0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5'
+    router: '0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F'
+    usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    dai: '0x6b175474e89094c44da98b954eedeac495271d0f'
+    bnpl: '0x84d821f7fbdd595c4c4a50842913e6b1e07d7a53'
     busd: '0x4Fabb145d64652a948d72533023f6E7A623C7C53'
     aaveDistributionController: '0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5'
     weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
@@ -26,6 +57,8 @@ networks:
     lendingPoolAddressesProvider: '0x88757f2f99175387aB4C6a4b3067c77A695b0349'
     router: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'
     usdt: '0x13512979ade267ab5100878e2e0f485b568328a4'
+    usdc: '0xdCFaB8057d08634279f8201b55d311c2a67897D2'
+    dai: '0x4f96fe3b7a6cf9725f59d353f723c1bdb64ca6aa'
     busd: '0x4c6E1EFC12FDfD568186b7BAEc0A43fFfb4bCcCf'
     aaveDistributionController: '0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5'
     weth: '0xd0A1E359811322d97991E03f863a0C30C2cF029C'
